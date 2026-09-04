@@ -31,9 +31,8 @@ export function Success({ channel, reducedMotion }: { channel: string; reducedMo
     <div ref={root} className="max-w-column" role="status">
       <p
         data-appear
-        className="mb-6 flex items-center gap-3 text-[0.8rem] uppercase tracking-[0.16em] text-on-ink-soft"
+        className="mb-6 text-[0.8rem] uppercase tracking-[0.16em] text-on-ink-soft"
       >
-        <span aria-hidden className="inline-block h-px w-8 bg-on-ink-soft/50" />
         Заявка принята
       </p>
 

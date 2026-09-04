@@ -17,6 +17,34 @@
   unicode-range: U+0000-00FF, U+0400-045F, U+0490-0491, U+2010-2026, U+2116, U+20BD, U+2212;
 }
 
+/* Anticva — антиква для главного заголовка. Файл принёс заказчик,
+   кириллица проверена по таблице cmap самого бинарника: все 66 русских букв
+   на месте и ссылаются на настоящие непустые контуры. Гарнитура юникейсная —
+   строчные нарисованы теми же формами, что заглавные, поэтому заголовок
+   набирается прописными: так подменный шрифт при загрузке выглядит так же,
+   и подмена не дёргает вёрстку. Длинного тире в файле нет, оно подхватывается
+   из Onest по обычному пофайловому фолбэку. */
+@font-face {
+  font-family: 'Anticva';
+  src: url('/fonts/anticva.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0400-045F, U+0490-0491, U+2116;
+}
+
+/* Подложка под Anticva, подогнанная по ширине: замер показал, что Anticva
+   на 10,5 % шире Arial на той же строке. Системный шрифт не качается и рисует
+   заголовок сразу почти в тех же габаритах, поэтому подмена не двигает вёрстку. */
+@font-face {
+  font-family: 'Anticva Fallback';
+  src: local('Arial'), local('Helvetica'), local('Liberation Sans');
+  size-adjust: 110.5%;
+  ascent-override: 88%;
+  descent-override: 22%;
+  line-gap-override: 0%;
+}
+
 @font-face {
   font-family: 'Cormorant';
   src: url('/fonts/cormorant-var.woff2') format('woff2-variations');
@@ -59,6 +87,7 @@
 
   --font-sans: 'Onest', 'Onest Fallback', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Cormorant', Georgia, 'Times New Roman', serif;
+  --font-heading: 'Anticva', 'Anticva Fallback', 'Cormorant', Georgia, serif;
 
   --gutter: 1.25rem;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -165,6 +194,16 @@ textarea {
   animation-delay: var(--d, 0s);
 }
 
+/* Главный заголовок первого экрана. Прописные — не стилевой каприз,
+   а свойство гарнитуры: строчных у неё нет. */
+.heading-anticva {
+  font-family: var(--font-heading);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.005em;
+  word-spacing: 0.04em;
+}
+
 /* Цифра вилки: серифные табличные цифры, чтобы диапазон не «прыгал». */
 .figure {
   font-family: var(--font-display);
@@ -174,6 +213,179 @@ textarea {
   font-variant-numeric: lining-nums tabular-nums;
   font-feature-settings: 'lnum' 1, 'tnum' 1, 'onum' 0;
   letter-spacing: -0.01em;
+}
+
+/* ------------------------------------------------------------------ */
+/* Объём в квизе                                                       */
+/*                                                                     */
+/* Всё, что движется, живёт в transform и opacity. Ни теней, ни блюров, */
+/* ни фильтров в переходах: они считаются на каждом кадре и съедают     */
+/* мобильный бюджет. Глубина делается перспективой и слоями по Z.       */
+/* ------------------------------------------------------------------ */
+
+.stage {
+  perspective: 1500px;
+  perspective-origin: 50% 42%;
+  transform-style: preserve-3d;
+}
+
+/* Слой, который уезжает в глубину при смене вопроса. Отделён от карточки:
+   иначе покадровый наклон и переход между вопросами писали бы
+   в один и тот же transform и затирали друг друга. */
+.depth {
+  transform-style: preserve-3d;
+  will-change: transform, opacity;
+}
+
+/* Карточка вопроса — настоящая поверхность, а не подсветка под текстом.
+   Наклон задаётся переменными, их покадрово крутит указатель. */
+.card3d {
+  position: relative;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg))
+    translate3d(0, 0, var(--tz, 0px));
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+  background: var(--paper-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: 1.1rem;
+  padding: 1.6rem 1.35rem 1.1rem;
+}
+
+@media (min-width: 768px) {
+  .card3d {
+    border-radius: 1.4rem;
+    padding: 2.6rem 2.4rem 2rem;
+  }
+}
+
+/* Пока указатель ведёт карточку, переход выключен: иначе он борется
+   с покадровым обновлением и движение становится вязким. */
+.card3d[data-tracking='1'] {
+  transition: none;
+}
+
+/* Вторая плоскость позади карточки. Она не украшение: именно по сдвигу
+   между ней и карточкой глаз считывает, что сцена объёмная. */
+.card3d__plate {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: inherit;
+  background: var(--paper);
+  transform: translate3d(0, 1.1rem, -70px) scale(0.965);
+  pointer-events: none;
+}
+
+.card3d__plate--far {
+  transform: translate3d(0, 2.1rem, -130px) scale(0.93);
+  opacity: 0.55;
+}
+
+/* Слои внутри карточки. Чем ближе к человеку, тем важнее. */
+.layer-back {
+  transform: translate3d(0, 0, 14px);
+}
+.layer-mid {
+  transform: translate3d(0, 0, 30px);
+}
+.layer-front {
+  transform: translate3d(0, 0, 52px);
+}
+
+/* Вариант ответа: приподнимается к человеку по наведению и прижимается
+   по нажатию. Обе связки — чистый transform. */
+.option3d {
+  transform-style: preserve-3d;
+  transform: translate3d(0, 0, var(--oz, 0px));
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.2s linear;
+  will-change: transform;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .option3d:hover {
+    --oz: 26px;
+  }
+}
+
+.option3d:active {
+  --oz: 6px;
+  transition-duration: 0.09s;
+}
+
+.option3d[data-selected='1'] {
+  --oz: 18px;
+}
+
+/* Заливка выбранного и наводимого варианта. Масштабируется по X,
+   а не меняет ширину: ширина пересчитывает раскладку, масштаб — нет. */
+.option3d__fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: var(--gold-soft);
+  border-radius: 0.6rem;
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .option3d:hover .option3d__fill {
+    transform: scaleX(1);
+  }
+}
+
+.option3d[data-selected='1'] .option3d__fill {
+  transform: scaleX(1);
+}
+
+/* Тень под карточкой нарисована один раз и только гасится прозрачностью:
+   анимировать box-shadow значит пересчитывать размытие каждый кадр. */
+.card3d__shadow {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: -1.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(20, 19, 15, 0.16), transparent 70%);
+  transform: translate3d(0, 0, -120px);
+  opacity: var(--shadow-o, 0.7);
+  transition: opacity 0.5s linear;
+  pointer-events: none;
+}
+
+/* На узких экранах перспектива мягче: на телефоне карточка занимает
+   почти всю ширину, и сильный угол ломает читаемость строки. */
+@media (max-width: 767px) {
+  .stage {
+    perspective: 900px;
+  }
+  .card3d__plate {
+    transform: translate3d(0, 0.7rem, -40px) scale(0.975);
+  }
+  .card3d__plate--far {
+    transform: translate3d(0, 1.35rem, -75px) scale(0.955);
+    opacity: 0.5;
+  }
+  .layer-back {
+    transform: translate3d(0, 0, 8px);
+  }
+  .layer-mid {
+    transform: translate3d(0, 0, 16px);
+  }
+  .layer-front {
+    transform: translate3d(0, 0, 28px);
+  }
+  .option3d:active {
+    --oz: 4px;
+  }
+  .option3d[data-selected='1'] {
+    --oz: 12px;
+  }
 }
 
 /* Инверсия для экрана результата */
@@ -210,5 +422,25 @@ textarea {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
+  }
+
+  /* Объём в квизе выключается вместе с движением: остаётся плоская
+     карточка, все состояния по-прежнему видны цветом и заливкой. */
+  .stage {
+    perspective: none !important;
+  }
+
+  .card3d,
+  .depth,
+  .option3d,
+  .layer-back,
+  .layer-mid,
+  .layer-front {
+    transform: none !important;
+  }
+
+  .card3d__plate,
+  .card3d__shadow {
+    display: none !important;
   }
 }

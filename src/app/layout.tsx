@@ -43,6 +43,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           type="font/woff2"
           crossOrigin="anonymous"
         />
+        {/* Anticva набирает заголовок первого экрана — это элемент LCP,
+            поэтому файл запрашивается сразу, а не после разбора стилей. */}
+        <link
+          rel="preload"
+          href={`${BASE}/fonts/anticva.woff2`}
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
         {/* Заглушка Метрики ставится до гидратации: цели, вызванные раньше
             загрузки счётчика, копятся в очереди и уходят потом. */}
         <script

@@ -24,12 +24,23 @@ type Props = {
 
 // Вперёд — спокойно, назад — быстрее: исправление своей ошибки не должно
 // ощущаться как наказание.
-const OUT_DURATION = 0.2;
-const IN_DURATION = 0.42;
-const BACK_OUT_DURATION = 0.14;
-const BACK_IN_DURATION = 0.28;
+const OUT_DURATION = 0.26;
+const IN_DURATION = 0.46;
+const BACK_OUT_DURATION = 0.18;
+const BACK_IN_DURATION = 0.32;
 /** Сколько держать защёлку, когда анимация выключена: страховка от двойного тапа. */
 const TAP_GUARD_MS = 140;
+
+/**
+ * Насколько далеко карточка уходит в глубину при смене вопроса.
+ * На телефоне ход короче: экран близко к глазам, и сильный пролёт
+ * читается как рывок, а не как движение.
+ */
+function depthTravel() {
+  if (typeof window === 'undefined') return { out: 240, in: 300, tilt: 10 };
+  const narrow = window.matchMedia('(max-width: 767px)').matches;
+  return narrow ? { out: 120, in: 150, tilt: 6 } : { out: 240, in: 300, tilt: 10 };
+}
 
 export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, onClose }: Props) {
   const [answers, setAnswers] = useState<Answers>(initialAnswers);
@@ -75,14 +86,26 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
 
     import('gsap').then(({ gsap }) => {
       if (cancelled || !card.current) return;
+      const travel = depthTravel();
+      const forward = direction.current > 0;
+      // Следующий вопрос приходит из глубины навстречу, предыдущий —
+      // возвращается спереди. Направление читается телом, а не подписью.
       gsap.fromTo(
         card.current,
-        { opacity: 0, y: direction.current > 0 ? 18 : -18 },
+        {
+          opacity: 0,
+          z: forward ? -travel.in : travel.in,
+          rotationY: forward ? travel.tilt : -travel.tilt,
+          rotationX: forward ? -travel.tilt * 0.35 : travel.tilt * 0.35,
+        },
         {
           opacity: 1,
-          y: 0,
-          duration: direction.current > 0 ? IN_DURATION : BACK_IN_DURATION,
+          z: 0,
+          rotationY: 0,
+          rotationX: 0,
+          duration: forward ? IN_DURATION : BACK_IN_DURATION,
           ease: 'power3.out',
+          clearProps: 'transform',
           onComplete: () => {
             locked.current = false;
           },
@@ -119,9 +142,12 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
           locked.current = false;
           return;
         }
+        const travel = depthTravel();
         gsap.to(card.current, {
           opacity: 0,
-          y: dir > 0 ? -14 : 14,
+          z: dir > 0 ? travel.out : -travel.out,
+          rotationY: dir > 0 ? -travel.tilt * 0.8 : travel.tilt * 0.8,
+          rotationX: dir > 0 ? travel.tilt * 0.3 : -travel.tilt * 0.3,
           duration: dir > 0 ? OUT_DURATION : BACK_OUT_DURATION,
           ease: 'power2.in',
           onComplete: apply,
@@ -223,7 +249,11 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
           </div>
         ) : null}
 
-        <main className="flex flex-1 flex-col justify-center py-9 md:py-12">
+        <main
+          className={`flex flex-1 flex-col justify-center ${
+            view === 'result' ? 'py-3 md:py-8' : 'py-9 md:py-12'
+          }`}
+        >
           {view === 'questions' ? (
             <QuestionScreen
               ref={card}
@@ -231,13 +261,19 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
               selected={answers[question.id]}
               onSelect={select}
               disabled={false}
+              reducedMotion={reducedMotion}
             />
           ) : null}
 
+          {/* Вилка и форма в одном кадре: человек видит цифру и тут же поля,
+              листать за формой не нужно. На широком экране — две колонки,
+              на телефоне — плотная колонка, которая помещается в экран. */}
           {view === 'result' ? (
-            <div className="space-y-14 md:space-y-20">
-              <PriceResult price={price} reducedMotion={reducedMotion} />
-              <div className="border-t border-on-ink-soft/25 pt-12 md:pt-16">
+            <div className="grid items-start gap-5 lg:grid-cols-12 lg:gap-14">
+              <div className="lg:col-span-7">
+                <PriceResult price={price} reducedMotion={reducedMotion} />
+              </div>
+              <div className="lg:col-span-4 lg:col-start-9">
                 <LeadForm
                   answers={answers}
                   price={price}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRef, useState } from 'react';
-import { formatPhone, isValidPhone, normalizePhone } from '@/lib/phone';
+import { looksLikePhone, phoneAsTyped } from '@/lib/phone';
 import { GOALS, reachGoal } from '@/lib/metrika';
 import { readSource } from '@/lib/storage';
 import { readableAnswers, type Answers } from '@/lib/quiz';
@@ -39,7 +39,7 @@ export function LeadForm({ answers, price, onSent }: Props) {
   const validate = () => {
     const next: typeof errors = {};
     if (name.trim().length < 2) next.name = 'Напишите, как к вам обращаться';
-    if (!isValidPhone(phone)) next.phone = 'Проверьте номер: нужно десять цифр после +7';
+    if (!looksLikePhone(phone)) next.phone = 'Это не похоже на номер телефона';
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -56,7 +56,8 @@ export function LeadForm({ answers, price, onSent }: Props) {
 
     const payload = {
       name: name.trim(),
-      phone: normalizePhone(phone),
+      // Уходит ровно то, что человек напечатал.
+      phone: phoneAsTyped(phone),
       channel,
       company: honeypot.current?.value ?? '',
       answers: readableAnswers(answers),
@@ -95,15 +96,11 @@ export function LeadForm({ answers, price, onSent }: Props) {
 
   return (
     <form onSubmit={submit} noValidate className="max-w-column">
-      <h2 className="text-[1.5rem] font-medium leading-snug tracking-[-0.01em] sm:text-[1.8rem]">
+      <h2 className="text-[1.08rem] font-medium leading-snug tracking-[-0.01em] sm:text-[1.35rem]">
         Точный расчёт и работы под вашу задачу
       </h2>
-      <p className="mt-3 text-[0.98rem] leading-relaxed text-on-ink-soft">
-        Разберу вашу задачу подробнее, посчитаю точную сумму и пришлю несколько
-        работ, близких к тому, что нужно вам.
-      </p>
 
-      <div className="mt-8 space-y-5">
+      <div className="mt-3.5 space-y-3">
         <Field
           id="name"
           label="Как вас зовут"
@@ -121,11 +118,11 @@ export function LeadForm({ answers, price, onSent }: Props) {
           label="Телефон"
           error={touched ? errors.phone : undefined}
           value={phone}
-          onChange={(v) => setPhone(formatPhone(v))}
+          onChange={setPhone}
           autoComplete="tel"
           inputMode="tel"
           type="tel"
-          placeholder="+7 900 000-00-00"
+          placeholder="Как вам удобно"
           disabled={sending}
         />
 
@@ -133,7 +130,7 @@ export function LeadForm({ answers, price, onSent }: Props) {
           <legend className="text-[0.78rem] uppercase tracking-[0.14em] text-on-ink-soft">
             Куда ответить
           </legend>
-          <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="mt-2 grid grid-cols-2 gap-2">
             {CHANNELS.map((item) => {
               const active = channel === item.id;
               return (
@@ -143,14 +140,13 @@ export function LeadForm({ answers, price, onSent }: Props) {
                   disabled={sending}
                   aria-pressed={active}
                   onClick={() => setChannel(item.id)}
-                  className={`rounded-2xl border px-4 py-4 text-left transition-colors duration-200 ${
+                  className={`option3d relative flex min-h-[46px] items-center justify-center rounded-xl border px-3 text-[0.98rem] font-medium transition-colors duration-200 ${
                     active
                       ? 'border-on-ink bg-on-ink/10 text-on-ink'
                       : 'border-on-ink-soft/35 text-on-ink-soft hover:border-on-ink-soft'
                   }`}
                 >
-                  <span className="block text-[1rem] font-medium">{item.label}</span>
-                  <span className="mt-0.5 block text-[0.82rem] text-on-ink-soft">{item.hint}</span>
+                  {item.label}
                 </button>
               );
             })}
@@ -178,18 +174,18 @@ export function LeadForm({ answers, price, onSent }: Props) {
       <button
         type="submit"
         disabled={sending || status === 'sent'}
-        className="mt-8 inline-flex w-full items-center justify-center rounded-full bg-on-ink px-8 py-[1.15rem] text-[1.05rem] font-medium text-ink transition-transform duration-300 ease-aurea will-change-transform hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0 sm:w-auto sm:px-11"
+        className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-on-ink px-8 py-[0.95rem] text-[1.02rem] font-medium text-ink transition-transform duration-300 ease-aurea will-change-transform hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0"
       >
         {sending ? 'Отправляю…' : 'Отправить'}
       </button>
 
-      <p className="mt-5 text-[0.92rem] leading-relaxed text-on-ink-soft">
-        Перезвоню в течение семи минут в рабочее время. Телефон нужен только
-        для ответа по этой заявке — никаких рассылок.
+      <p className="mt-3 text-[0.86rem] leading-snug text-on-ink-soft">
+        Перезвоню в течение семи минут в рабочее время.
       </p>
 
-      <p className="mt-3 text-[0.85rem] leading-relaxed text-on-ink-soft">
-        Отправляя форму, вы соглашаетесь на{' '}
+      <p className="mt-1.5 text-[0.78rem] leading-snug text-on-ink-soft/85">
+        Телефон — только для ответа по заявке, рассылок нет. Отправляя форму,
+        вы соглашаетесь на{' '}
         <Link
           href="/privacy"
           target="_blank"
@@ -248,7 +244,7 @@ function Field({
         aria-invalid={Boolean(error)}
         aria-describedby={error ? `${id}-error` : undefined}
         onChange={(event) => onChange(event.target.value)}
-        className={`mt-2 w-full border-b bg-transparent pb-3 pt-1 text-[1.15rem] outline-none transition-colors duration-200 placeholder:text-on-ink-soft/60 disabled:opacity-60 ${
+        className={`mt-1.5 w-full border-b bg-transparent pb-2.5 pt-1 text-[1.05rem] outline-none transition-colors duration-200 placeholder:text-on-ink-soft/60 disabled:opacity-60 ${
           error ? 'border-gold-soft' : 'border-on-ink-soft/40 focus:border-on-ink'
         }`}
       />

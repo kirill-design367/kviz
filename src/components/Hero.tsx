@@ -24,12 +24,14 @@ export function Hero({ onStart }: Props) {
         <div className="grid w-full gap-14 lg:grid-cols-12 lg:items-end lg:gap-10">
           {/* Левая колонка: оффер и единственное действие на экране */}
           <div className="lg:col-span-7 xl:col-span-7">
-            <p style={delay(2)} className="reveal mb-6 flex items-center gap-3 text-[0.8rem] uppercase tracking-[0.16em] text-ink-faint">
-              <span aria-hidden className="inline-block h-px w-8 bg-line" />
+            <p style={delay(2)} className="reveal mb-6 text-[0.8rem] uppercase tracking-[0.16em] text-ink-faint">
               Семь вопросов
             </p>
 
-            <h1 style={delay(3)} className="reveal text-[2rem] font-medium leading-[1.06] tracking-[-0.02em] xs:text-[2.35rem] sm:text-[3.1rem] lg:text-[3.6rem] xl:text-[4.25rem]">
+            <h1
+              style={delay(3)}
+              className="heading-anticva reveal text-[1.85rem] leading-[1.02] xs:text-[2.15rem] sm:text-[2.9rem] lg:text-[3.4rem] xl:text-[4rem]"
+            >
               Стоимость сайта под вашу задачу — за минуту
             </h1>
 

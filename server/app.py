@@ -355,20 +355,26 @@ NAME_OK = re.compile(r"^[\w\s\-'’.]{2,60}$", re.UNICODE)
 CHANNELS = {"telegram": "Telegram", "call": "Звонок"}
 
 
-def normalize_phone(raw):
-    """Возвращает +7XXXXXXXXXX либо None."""
-    digits = "".join(PHONE_DIGITS.findall(raw or ""))
-    if len(digits) == 11 and digits[0] in ("7", "8"):
-        digits = "7" + digits[1:]
-    elif len(digits) == 10:
-        digits = "7" + digits
-    else:
-        return None
-    if digits[1] != "9":
-        # Мобильные РФ начинаются с 9. Городские номера квизу не нужны,
-        # но и отказывать наотрез не будем — вернём как есть.
-        return "+" + digits
-    return "+" + digits
+PHONE_ALLOWED = re.compile(r"^[\d\s+()\-.]+$")
+
+
+def accept_phone(raw):
+    """Принимает номер ровно в том виде, в каком его напечатали.
+
+    Ничего не переставляем и не дописываем: человек ввёл как ему удобно,
+    и в заявке владелец увидит его же запись. Проверяем только, что это
+    вообще похоже на номер — от десяти до пятнадцати цифр и без букв.
+    Возвращает (как_напечатано, только_цифры) либо (None, None).
+    """
+    value = (raw or "").strip()
+    if not value or len(value) > 40:
+        return None, None
+    if not PHONE_ALLOWED.match(value):
+        return None, None
+    digits = "".join(PHONE_DIGITS.findall(value))
+    if not 10 <= len(digits) <= 15:
+        return None, None
+    return value, digits
 
 
 def clean_text(value, limit):
@@ -384,9 +390,9 @@ def parse_lead(payload, remote_ip, user_agent):
     if len(name) < 2 or not NAME_OK.match(name):
         errors["name"] = "Имя не похоже на имя"
 
-    phone = normalize_phone(payload.get("phone"))
+    phone, phone_digits = accept_phone(payload.get("phone"))
     if not phone:
-        errors["phone"] = "Телефон не похож на российский номер"
+        errors["phone"] = "Это не похоже на номер телефона"
 
     channel = payload.get("channel")
     if channel not in CHANNELS:
@@ -429,7 +435,10 @@ def parse_lead(payload, remote_ip, user_agent):
         "id": uuid.uuid4().hex[:12],
         "received_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "name": name,
+        # Ровно то, что напечатал человек.
         "phone": phone,
+        # Только цифры — нужны для ссылки в Telegram, в сообщении не показываются.
+        "phone_digits": phone_digits,
         "channel": channel,
         "channel_label": CHANNELS.get(channel, "—"),
         "answers": safe_answers,
@@ -465,8 +474,8 @@ def render_message(lead):
         "<b>%s</b>" % escape_html(lead["name"]),
         "%s · %s" % (escape_html(lead["phone"]), escape_html(lead["channel_label"])),
     ]
-    if lead["channel"] == "telegram":
-        lines.append("Написать: https://t.me/+%s" % lead["phone"].lstrip("+"))
+    if lead["channel"] == "telegram" and lead.get("phone_digits"):
+        lines.append("Написать: https://t.me/+%s" % lead["phone_digits"])
 
     low = lead["price"].get("low")
     high = lead["price"].get("high")

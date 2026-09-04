@@ -37,6 +37,14 @@ async function run(browser, view) {
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${OUT}/03-вопрос-1-${view.tag}.png` });
 
+  // Наведение на вариант: видно, что карточка объёмная и вариант отзывается
+  if (!view.isMobile) {
+    await page.locator('[role="dialog"] ul li button').nth(1).hover();
+    await page.mouse.move(560, 380);
+    await page.waitForTimeout(700);
+    await page.screenshot({ path: `${OUT}/03b-вопрос-наведение-${view.tag}.png` });
+  }
+
   for (let i = 0; i < ANSWERS.length; i++) {
     const options = page.locator('[role="dialog"] ul li button');
     await options.nth(ANSWERS[i] - 1).click();
@@ -44,15 +52,10 @@ async function run(browser, view) {
     if (i === 3) await page.screenshot({ path: `${OUT}/04-вопрос-5-${view.tag}.png` });
   }
 
-  // Вилка
+  // Вилка и форма — один кадр
   await page.waitForTimeout(900);
-  await page.screenshot({ path: `${OUT}/05-вилка-${view.tag}.png` });
+  await page.screenshot({ path: `${OUT}/05-вилка-и-форма-${view.tag}.png` });
   const priceText = await page.locator('.figure').first().innerText().catch(() => '');
-
-  // Форма
-  await page.locator('form').scrollIntoViewIfNeeded();
-  await page.waitForTimeout(600);
-  await page.screenshot({ path: `${OUT}/06-форма-${view.tag}.png` });
 
   // Проверка валидации телефона
   await page.fill('#name', 'Кирилл');
@@ -60,7 +63,7 @@ async function run(browser, view) {
   await page.getByRole('button', { name: 'Отправить' }).click();
   await page.waitForTimeout(400);
   const phoneError = await page.locator('#phone-error').innerText().catch(() => '');
-  await page.screenshot({ path: `${OUT}/07-ошибка-телефона-${view.tag}.png` });
+  await page.screenshot({ path: `${OUT}/06-ошибка-телефона-${view.tag}.png` });
 
   // Успешная отправка
   await page.fill('#phone', '9991234567');
@@ -68,7 +71,7 @@ async function run(browser, view) {
   const submit = page.getByRole('button', { name: 'Отправить' });
   await submit.click();
   await page.waitForTimeout(1500);
-  await page.screenshot({ path: `${OUT}/08-подтверждение-${view.tag}.png` });
+  await page.screenshot({ path: `${OUT}/07-подтверждение-${view.tag}.png` });
   const success = await page.getByText('Спасибо, записал').isVisible().catch(() => false);
 
   // Вилка при неопределённых ответах: должна появиться оговорка
@@ -83,7 +86,7 @@ async function run(browser, view) {
     await page.waitForTimeout(600);
   }
   await page.waitForTimeout(900);
-  await page.screenshot({ path: `${OUT}/10-вилка-неопределённая-${view.tag}.png` });
+  await page.screenshot({ path: `${OUT}/08-вилка-неопределённая-${view.tag}.png` });
 
   // 404
   await page.goto(`${BASE}/нет-такой-страницы`, { waitUntil: 'networkidle' }).catch(() => {});

@@ -12,6 +12,9 @@ type Props = {
  * Вилка показывается сразу, как только пройден седьмой вопрос: без условий,
  * без формы перед ней и без анимации «идёт расчёт». Число уже посчитано
  * в том же кадре, в котором отрисован экран.
+ *
+ * Блок живёт в одном кадре с формой, поэтому набран плотно: всё, что можно
+ * сказать короче, сказано короче, а объяснения не отталкивают поля вниз.
  */
 export function PriceResult({ price, reducedMotion }: Props) {
   const root = useRef<HTMLDivElement>(null);
@@ -29,7 +32,7 @@ export function PriceResult({ price, reducedMotion }: Props) {
           y: 16,
           duration: 0.6,
           ease: 'power3.out',
-          stagger: 0.08,
+          stagger: 0.07,
         });
       }, root);
     });
@@ -44,18 +47,17 @@ export function PriceResult({ price, reducedMotion }: Props) {
     <div ref={root}>
       <p
         data-appear
-        className="mb-6 flex items-center gap-3 text-[0.8rem] uppercase tracking-[0.16em] text-on-ink-soft"
+        className="text-[0.78rem] uppercase tracking-[0.16em] text-on-ink-soft"
       >
-        <span aria-hidden className="inline-block h-px w-8 bg-on-ink-soft/50" />
         Вилка по вашим ответам
       </p>
 
       <p
         data-appear
-        className="figure min-h-[2.7em] text-[2.6rem] leading-[1.02] tracking-[-0.015em] xs:text-[3.1rem] sm:min-h-[1.1em] sm:text-[4.2rem] md:text-[5.4rem]"
+        className="figure mt-2.5 text-[1.95rem] leading-[1.04] tracking-[-0.015em] xs:text-[2.3rem] sm:text-[3.2rem] lg:text-[2.9rem] xl:text-[3.4rem]"
       >
         <span className="whitespace-nowrap">{formatMoney(price.low)}</span>
-        <span aria-hidden className="mx-2 text-on-ink-soft md:mx-4">
+        <span aria-hidden className="mx-2 text-on-ink-soft lg:mx-3">
           —
         </span>
         <span className="whitespace-nowrap">
@@ -63,44 +65,39 @@ export function PriceResult({ price, reducedMotion }: Props) {
         </span>
       </p>
 
-      <p data-appear className="mt-6 max-w-column text-[0.98rem] leading-relaxed text-on-ink-soft">
-        Нижняя граница — работа ровно по вашим ответам. Верхняя — если по ходу
-        добавятся детали.
+      <p data-appear className="mt-3 max-w-[34rem] text-[0.88rem] leading-snug text-on-ink-soft">
+        Низ — работа ровно по ответам, верх — если добавятся детали.
       </p>
 
       {price.caveat ? (
         <p
           data-appear
-          className="mt-6 max-w-column border-l-2 border-gold-soft/60 pl-4 text-[0.95rem] leading-relaxed text-on-ink-soft"
+          className="mt-3 max-w-[34rem] border-l-2 border-gold-soft/60 pl-3 text-[0.85rem] leading-snug text-on-ink-soft"
         >
           {price.caveat}
         </p>
       ) : null}
 
-      <p
-        data-appear
-        className="mt-10 text-[0.78rem] uppercase tracking-[0.14em] text-on-ink-soft md:mt-12"
-      >
-        Что повлияло на диапазон
-      </p>
-
       <dl
         data-appear
-        className="mt-4 grid max-w-[38rem] gap-px overflow-hidden border-y border-on-ink-soft/25 md:grid-cols-3"
+        className="mt-3.5 flex flex-wrap gap-x-2 gap-y-1 border-t border-on-ink-soft/25 pt-2.5 text-[0.84rem] leading-snug"
       >
-        {price.factors.map((factor) => (
-          <div key={factor.label} className="border-b border-on-ink-soft/25 py-4 md:border-b-0">
-            <dt className="text-[0.78rem] uppercase tracking-[0.14em] text-on-ink-soft">
-              {factor.label}
-            </dt>
-            <dd className="mt-1.5 text-[1rem] leading-snug">{factor.value}</dd>
+        {price.factors.map((factor, index) => (
+          <div key={factor.label} className="flex items-baseline gap-2">
+            <dt className="sr-only">{factor.label}</dt>
+            <dd className="text-on-ink-soft">{factor.value}</dd>
+            {index < price.factors.length - 1 ? (
+              <span aria-hidden className="text-on-ink-soft/60">
+                ·
+              </span>
+            ) : null}
           </div>
         ))}
       </dl>
 
-      <p data-appear className="mt-7 max-w-column text-[0.95rem] leading-relaxed text-on-ink-soft">
-        Ответ про бюджет в расчёт не входит — иначе вы увидели бы ровно ту цифру,
-        которую сами и выбрали. Точную сумму назову, когда разберём детали.
+      <p data-appear className="mt-2 max-w-[34rem] text-[0.82rem] leading-snug text-on-ink-soft/85">
+        Бюджет в расчёт не входит — иначе вы увидели бы ту цифру, которую сами
+        и выбрали. Точную сумму назову, когда разберём детали.
       </p>
     </div>
   );
