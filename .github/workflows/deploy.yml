@@ -61,9 +61,13 @@ jobs:
     name: Публикация
     needs: build
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    # Блок environment: github-pages здесь намеренно не указан. Это окружение
+    # создаётся с ограничением по имени ветки, и джоб падал за две секунды,
+    # не начав ни одного шага. Само развёртывание создаёт actions/deploy-pages,
+    # окружение ему для этого не требуется.
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Адрес опубликованного сайта
+        run: echo "Сайт опубликован — ${{ steps.deployment.outputs.page_url }}"
