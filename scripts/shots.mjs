@@ -71,6 +71,20 @@ async function run(browser, view) {
   await page.screenshot({ path: `${OUT}/08-подтверждение-${view.tag}.png` });
   const success = await page.getByText('Спасибо, записал').isVisible().catch(() => false);
 
+  // Вилка при неопределённых ответах: должна появиться оговорка
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: /Рассчитать стоимость/ }).click();
+  await page.waitForTimeout(600);
+  const VAGUE = [4, 4, 1, 4, 4, 4, 5]; // «пока не определился», «не знаю»
+  for (const pick of VAGUE) {
+    await page.locator('[role="dialog"] ul li button').nth(pick - 1).click();
+    await page.waitForTimeout(600);
+  }
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: `${OUT}/10-вилка-неопределённая-${view.tag}.png` });
+
   // 404
   await page.goto(`${BASE}/нет-такой-страницы`, { waitUntil: 'networkidle' }).catch(() => {});
   await page.waitForTimeout(700);

@@ -68,6 +68,15 @@ export function PriceResult({ price, reducedMotion }: Props) {
         добавятся детали.
       </p>
 
+      {price.caveat ? (
+        <p
+          data-appear
+          className="mt-6 max-w-column border-l-2 border-gold-soft/60 pl-4 text-[0.95rem] leading-relaxed text-on-ink-soft"
+        >
+          {price.caveat}
+        </p>
+      ) : null}
+
       <p
         data-appear
         className="mt-10 text-[0.78rem] uppercase tracking-[0.14em] text-on-ink-soft md:mt-12"

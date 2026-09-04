@@ -86,12 +86,13 @@ test('магазин не дешевле сайта с нуля, передел�
     }
 });
 
-test('вилка не уже 1.25 и не шире 2.2', () => {
+test('вилка не уже 1.35 и не шире допустимого для своей неопределённости', () => {
   for (const c of all()) {
     const r = price(c.task, c.pages, c.priority);
     const spread = r.high / r.low;
-    assert.ok(spread >= 1.249, `${JSON.stringify(c)}: вилка слишком узкая (${spread.toFixed(2)})`);
-    assert.ok(spread <= 2.21, `${JSON.stringify(c)}: вилка слишком широкая (${spread.toFixed(2)})`);
+    const limit = [2.21, 2.51, 2.81][r.uncertain.length];
+    assert.ok(spread >= 1.349, `${JSON.stringify(c)}: вилка слишком узкая (${spread.toFixed(2)})`);
+    assert.ok(spread <= limit, `${JSON.stringify(c)}: вилка ${spread.toFixed(2)} шире предела ${limit}`);
   }
 });
 
@@ -104,6 +105,78 @@ test('неопределённость расширяет вилку', () => {
       `${priority}: «не знаю» про страницы не расширило вилку`,
     );
   }
+});
+
+test('«не знаю» про страницы накрывает пол большого честного ответа', () => {
+  // Главное свойство: человеку, которому нужно двенадцать страниц, не должно
+  // быть выгодно ответить «не знаю» — иначе квиз учит не отвечать.
+  for (const task of TASKS)
+    for (const priority of PRIORITY) {
+      const vague = price(task, 'unknown', priority);
+      for (const pages of ['upto5', 'more5']) {
+        const exact = price(task, pages, priority);
+        assert.ok(
+          vague.low <= exact.low && exact.low <= vague.high,
+          `${task}/${priority}: пол честного «${pages}» (${exact.low}) не попадает в вилку «не знаю» (${vague.low}–${vague.high})`,
+        );
+      }
+    }
+});
+
+test('«не знаю» уходит выше среднего честного ответа', () => {
+  for (const task of ['new', 'redesign', 'shop'])
+    for (const priority of PRIORITY) {
+      const vague = price(task, 'unknown', priority);
+      const middle = price(task, 'upto5', priority);
+      assert.ok(
+        vague.high > middle.high,
+        `${task}/${priority}: потолок «не знаю» (${vague.high}) не выше потолка «до пяти» (${middle.high})`,
+      );
+    }
+});
+
+test('«пока не определился» не дешевле самого вероятного прочтения', () => {
+  // Вилку строим по обычному сайту: это самый частый случай. Более дорогой
+  // край (интернет-магазин) в неё не всегда влезает — тогда о нём говорится
+  // словами в caveat, а не растягиванием вилки втрое.
+  for (const pages of PAGES)
+    for (const priority of PRIORITY) {
+      const vague = price('unsure', pages, priority);
+      const likely = price('new', pages, priority);
+      assert.ok(vague.low <= likely.low, `${pages}/${priority}: «не определился» дороже по полу`);
+      assert.ok(vague.high >= likely.high, `${pages}/${priority}: «не определился» ниже по потолку`);
+    }
+});
+
+test('у неопределённых ответов всегда есть оговорка, у точных — нет', () => {
+  for (const c of all()) {
+    const r = price(c.task, c.pages, c.priority);
+    if (r.uncertain.length === 0) {
+      assert.equal(r.caveat, null, `${JSON.stringify(c)}: оговорка там, где всё определено`);
+    } else {
+      assert.ok(r.caveat && r.caveat.length > 20, `${JSON.stringify(c)}: нет оговорки`);
+    }
+  }
+});
+
+test('если магазин не влезает в вилку неопределённой задачи — об этом сказано', () => {
+  for (const pages of PAGES)
+    for (const priority of PRIORITY) {
+      const vague = price('unsure', pages, priority);
+      if (vague.high < 300_000) {
+        assert.ok(
+          vague.caveat?.includes('300 000'),
+          `${pages}/${priority}: вилка до ${vague.high}, а про порог магазина не сказано`,
+        );
+      }
+    }
+});
+
+test('список неопределённых ответов соответствует выбору', () => {
+  assert.deepEqual(price('new', 'upto5', 'design').uncertain, []);
+  assert.deepEqual(price('unsure', 'upto5', 'design').uncertain, ['задача']);
+  assert.deepEqual(price('new', 'unknown', 'design').uncertain, ['объём']);
+  assert.deepEqual(price('unsure', 'unknown', 'design').uncertain, ['задача', 'объём']);
 });
 
 test('всё кратно 10 000 — цифра читается как оценка, а не как смета', () => {
