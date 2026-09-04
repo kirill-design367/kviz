@@ -3,6 +3,9 @@ import './globals.css';
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kirill-design367.github.io/kviz';
+// Пока номера счётчика нет, пиксель не ставится: иначе каждый заход
+// без JS дёргал бы https://mc.yandex.ru/watch/ и получал ошибку.
+const YM_ID = process.env.NEXT_PUBLIC_YM_ID ?? '';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
@@ -55,15 +58,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             NEXT_PUBLIC_YM_ID на сборке, скрипт грузится из src/lib/metrika.ts
             в простое браузера, чтобы не портить скорость первой отрисовки.
             noscript-пиксель нужен Метрике для учёта посетителей без JS. */}
-        <noscript>
-          <div>
-            <img
-              src={`https://mc.yandex.ru/watch/${process.env.NEXT_PUBLIC_YM_ID ?? ''}`}
-              style={{ position: 'absolute', left: '-9999px' }}
-              alt=""
-            />
-          </div>
-        </noscript>
+        {YM_ID ? (
+          <noscript>
+            <div>
+              <img
+                src={`https://mc.yandex.ru/watch/${YM_ID}`}
+                style={{ position: 'absolute', left: '-9999px' }}
+                alt=""
+              />
+            </div>
+          </noscript>
+        ) : null}
       </body>
     </html>
   );
