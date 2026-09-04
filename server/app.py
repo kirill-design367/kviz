@@ -1,0 +1,732 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+AUREA · приёмник заявок с квиз-лендинга.
+
+Только стандартная библиотека Python 3 — на сервере ничего не ставится через pip.
+Слушает 127.0.0.1, наружу выставляется через отдельный конфиг nginx.
+
+Главные свойства:
+  * заявка пишется на диск с fsync ДО ответа браузеру — она не теряется,
+    даже если Telegram недоступен;
+  * api.telegram.org в России не отвечает по IPv4, но отвечает по IPv6 —
+    сервис пробует оба пути, запоминает рабочий и периодически перепроверяет;
+  * не ушедшие сообщения складываются в outbox и переотправляются с паузами.
+
+Переменные окружения (файл /etc/aurea-kviz/kviz.env, права 600, читает systemd):
+  AUREA_KVIZ_BOT_TOKEN        токен бота               (обязательно)
+  AUREA_KVIZ_CHAT_ID          id получателя            (обязательно)
+  AUREA_KVIZ_BIND             адрес, по умолчанию 127.0.0.1
+  AUREA_KVIZ_PORT             порт, по умолчанию 8787
+  AUREA_KVIZ_DATA_DIR         каталог данных, по умолчанию /var/lib/aurea-kviz
+  AUREA_KVIZ_ALLOWED_ORIGINS  список Origin через запятую, по умолчанию *
+  AUREA_KVIZ_IP_FAMILY        auto | ipv6 | ipv4, по умолчанию auto
+  AUREA_KVIZ_RATE_PER_HOUR    заявок с одного адреса в час, по умолчанию 8
+"""
+
+import http.client
+import http.server
+import json
+import logging
+import os
+import re
+import socket
+import socketserver
+import ssl
+import sys
+import threading
+import time
+import uuid
+from datetime import datetime, timedelta, timezone
+
+# --------------------------------------------------------------------------- #
+# Конфигурация
+# --------------------------------------------------------------------------- #
+
+APP_NAME = "aurea-kviz"
+VERSION = "1.0.0"
+
+BOT_TOKEN = os.environ.get("AUREA_KVIZ_BOT_TOKEN", "").strip()
+CHAT_ID = os.environ.get("AUREA_KVIZ_CHAT_ID", "").strip()
+BIND = os.environ.get("AUREA_KVIZ_BIND", "127.0.0.1").strip()
+PORT = int(os.environ.get("AUREA_KVIZ_PORT", "8787"))
+DATA_DIR = os.environ.get("AUREA_KVIZ_DATA_DIR", "/var/lib/aurea-kviz")
+ALLOWED_ORIGINS = [
+    o.strip().rstrip("/")
+    for o in os.environ.get("AUREA_KVIZ_ALLOWED_ORIGINS", "*").split(",")
+    if o.strip()
+]
+IP_FAMILY_PREF = os.environ.get("AUREA_KVIZ_IP_FAMILY", "auto").strip().lower()
+RATE_PER_HOUR = int(os.environ.get("AUREA_KVIZ_RATE_PER_HOUR", "8"))
+
+TELEGRAM_HOST = "api.telegram.org"
+LEADS_LOG = os.path.join(DATA_DIR, "leads.jsonl")
+OUTBOX_DIR = os.path.join(DATA_DIR, "outbox")
+SENT_DIR = os.path.join(DATA_DIR, "sent")
+MAX_BODY = 16 * 1024
+MSK = timezone(timedelta(hours=3))
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    stream=sys.stdout,
+)
+log = logging.getLogger(APP_NAME)
+
+
+# --------------------------------------------------------------------------- #
+# Транспорт до Telegram: принудительный выбор IPv6 / IPv4
+# --------------------------------------------------------------------------- #
+
+class FamilyHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS-соединение, которое ходит строго по указанному семейству адресов.
+
+    В штатной библиотеке нет способа сказать «только IPv6»: socket.create_connection
+    перебирает адреса в порядке getaddrinfo и на серверах в РФ первым обычно идёт
+    IPv4-адрес api.telegram.org, который не отвечает. Соединение висит до таймаута,
+    и бот выглядит сломанным. Здесь семейство задаётся явно.
+    """
+
+    def __init__(self, host, family, timeout, context):
+        super().__init__(host, timeout=timeout, context=context)
+        self._family = family
+
+    def connect(self):
+        last_error = None
+        try:
+            infos = socket.getaddrinfo(self.host, self.port, self._family, socket.SOCK_STREAM)
+        except OSError as exc:
+            raise OSError("не разрешается %s: %s" % (self.host, exc))
+        if not infos:
+            raise OSError("нет адресов для семейства %s" % self._family)
+        for af, socktype, proto, _canon, sa in infos:
+            try:
+                sock = socket.socket(af, socktype, proto)
+            except OSError as exc:
+                last_error = exc
+                continue
+            try:
+                sock.settimeout(self.timeout)
+                sock.connect(sa)
+            except OSError as exc:
+                last_error = exc
+                sock.close()
+                continue
+            self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+            return
+        raise last_error if last_error else OSError("не удалось подключиться")
+
+
+class TelegramTransport:
+    """Знает, по какому семейству адресов Telegram отвечает, и помнит это."""
+
+    ORDER = {
+        "auto": [socket.AF_INET6, socket.AF_INET],
+        "ipv6": [socket.AF_INET6],
+        "ipv4": [socket.AF_INET],
+    }
+    NAMES = {socket.AF_INET6: "IPv6", socket.AF_INET: "IPv4"}
+
+    def __init__(self, token, preference="auto", timeout=12.0):
+        self._token = token
+        self._candidates = self.ORDER.get(preference, self.ORDER["auto"])
+        self._timeout = timeout
+        self._preferred = None
+        self._ssl = ssl.create_default_context()
+        self._lock = threading.Lock()
+
+    @property
+    def working_path(self):
+        if self._preferred is None:
+            return "неизвестно"
+        return self.NAMES.get(self._preferred, "неизвестно")
+
+    def probe(self):
+        """Проверяет оба пути и пишет в лог, какой отвечает. Вызывается при старте."""
+        results = {}
+        for family in (socket.AF_INET6, socket.AF_INET):
+            name = self.NAMES[family]
+            try:
+                infos = socket.getaddrinfo(TELEGRAM_HOST, 443, family, socket.SOCK_STREAM)
+            except OSError as exc:
+                results[name] = "нет адреса (%s)" % exc
+                continue
+            if not infos:
+                results[name] = "нет адреса"
+                continue
+            af, socktype, proto, _c, sa = infos[0]
+            try:
+                sock = socket.socket(af, socktype, proto)
+            except OSError as exc:
+                # На хосте вообще нет стека этого семейства.
+                results[name] = "не поддерживается системой (%s)" % exc
+                continue
+            sock.settimeout(6.0)
+            started = time.monotonic()
+            try:
+                sock.connect(sa)
+                results[name] = "отвечает за %d мс (%s)" % (
+                    int((time.monotonic() - started) * 1000),
+                    sa[0],
+                )
+                with self._lock:
+                    if self._preferred is None and family in self._candidates:
+                        self._preferred = family
+            except OSError as exc:
+                results[name] = "не отвечает (%s)" % exc
+            finally:
+                sock.close()
+        for name, verdict in results.items():
+            log.info("Telegram по %s: %s", name, verdict)
+        if self._preferred is None:
+            log.warning(
+                "Ни один путь до %s не ответил при старте. "
+                "Заявки будут сохраняться в outbox и переотправляться.",
+                TELEGRAM_HOST,
+            )
+        else:
+            log.info("Выбран путь до Telegram: %s", self.working_path)
+        return results
+
+    def _order(self):
+        with self._lock:
+            preferred = self._preferred
+        if preferred is None:
+            return list(self._candidates)
+        return [preferred] + [f for f in self._candidates if f != preferred]
+
+    def send_message(self, text):
+        """Возвращает (True, None) либо (False, 'причина')."""
+        if not self._token or not CHAT_ID:
+            return False, "не заданы AUREA_KVIZ_BOT_TOKEN или AUREA_KVIZ_CHAT_ID"
+
+        payload = json.dumps(
+            {
+                "chat_id": CHAT_ID,
+                "text": text,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            }
+        ).encode("utf-8")
+
+        errors = []
+        for family in self._order():
+            name = self.NAMES[family]
+            conn = None
+            try:
+                conn = FamilyHTTPSConnection(
+                    TELEGRAM_HOST, family, self._timeout, self._ssl
+                )
+                conn.request(
+                    "POST",
+                    "/bot%s/sendMessage" % self._token,
+                    body=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Content-Length": str(len(payload)),
+                        "User-Agent": "%s/%s" % (APP_NAME, VERSION),
+                    },
+                )
+                response = conn.getresponse()
+                raw = response.read(64 * 1024)
+                if response.status == 200:
+                    with self._lock:
+                        self._preferred = family
+                    return True, None
+                # Токен/чат неверны — перебирать семейства бессмысленно.
+                detail = _describe_telegram_error(response.status, raw)
+                errors.append("%s: %s" % (name, detail))
+                if response.status in (400, 401, 403, 404):
+                    break
+            except Exception as exc:  # noqa: BLE001 — наружу уходит текстом в лог
+                errors.append("%s: %s" % (name, exc))
+            finally:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+        with self._lock:
+            self._preferred = None
+        return False, "; ".join(errors) or "неизвестная ошибка"
+
+
+def _describe_telegram_error(status, raw):
+    try:
+        data = json.loads(raw.decode("utf-8", "replace"))
+        return "HTTP %s %s" % (status, data.get("description", ""))
+    except Exception:  # noqa: BLE001
+        return "HTTP %s" % status
+
+
+# --------------------------------------------------------------------------- #
+# Хранилище заявок
+# --------------------------------------------------------------------------- #
+
+def _fsync_dir(path):
+    try:
+        fd = os.open(path, os.O_DIRECTORY)
+    except (AttributeError, OSError):
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+class LeadStore:
+    """Журнал всех заявок + очередь неотправленных.
+
+    leads.jsonl — вечный журнал, туда пишется каждая заявка.
+    outbox/     — по файлу на неотправленную заявку.
+    sent/       — то, что в итоге ушло (чтобы outbox не рос и было видно историю).
+    """
+
+    def __init__(self, data_dir):
+        self.data_dir = data_dir
+        self._lock = threading.Lock()
+        for path in (data_dir, OUTBOX_DIR, SENT_DIR):
+            os.makedirs(path, exist_ok=True)
+
+    def append(self, lead):
+        line = json.dumps(lead, ensure_ascii=False) + "\n"
+        with self._lock:
+            with open(LEADS_LOG, "a", encoding="utf-8") as handle:
+                handle.write(line)
+                handle.flush()
+                os.fsync(handle.fileno())
+
+    def enqueue(self, lead):
+        path = os.path.join(OUTBOX_DIR, "%s.json" % lead["id"])
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(lead, handle, ensure_ascii=False, indent=1)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+        _fsync_dir(OUTBOX_DIR)
+
+    def pending(self):
+        try:
+            names = sorted(n for n in os.listdir(OUTBOX_DIR) if n.endswith(".json"))
+        except FileNotFoundError:
+            return []
+        out = []
+        for name in names:
+            try:
+                with open(os.path.join(OUTBOX_DIR, name), encoding="utf-8") as handle:
+                    out.append(json.load(handle))
+            except (OSError, ValueError) as exc:
+                log.error("Не читается %s: %s", name, exc)
+        return out
+
+    def mark_sent(self, lead_id):
+        src = os.path.join(OUTBOX_DIR, "%s.json" % lead_id)
+        dst = os.path.join(SENT_DIR, "%s.json" % lead_id)
+        try:
+            os.replace(src, dst)
+        except FileNotFoundError:
+            pass
+
+    def pending_count(self):
+        try:
+            return sum(1 for n in os.listdir(OUTBOX_DIR) if n.endswith(".json"))
+        except FileNotFoundError:
+            return 0
+
+
+# --------------------------------------------------------------------------- #
+# Разбор и проверка заявки
+# --------------------------------------------------------------------------- #
+
+PHONE_DIGITS = re.compile(r"\d")
+NAME_OK = re.compile(r"^[\w\s\-'’.]{2,60}$", re.UNICODE)
+CHANNELS = {"telegram": "Telegram", "call": "Звонок"}
+
+
+def normalize_phone(raw):
+    """Возвращает +7XXXXXXXXXX либо None."""
+    digits = "".join(PHONE_DIGITS.findall(raw or ""))
+    if len(digits) == 11 and digits[0] in ("7", "8"):
+        digits = "7" + digits[1:]
+    elif len(digits) == 10:
+        digits = "7" + digits
+    else:
+        return None
+    if digits[1] != "9":
+        # Мобильные РФ начинаются с 9. Городские номера квизу не нужны,
+        # но и отказывать наотрез не будем — вернём как есть.
+        return "+" + digits
+    return "+" + digits
+
+
+def clean_text(value, limit):
+    if not isinstance(value, str):
+        return ""
+    return value.replace("\r", " ").replace("\n", " ").strip()[:limit]
+
+
+def parse_lead(payload, remote_ip, user_agent):
+    errors = {}
+
+    name = clean_text(payload.get("name"), 60)
+    if len(name) < 2 or not NAME_OK.match(name):
+        errors["name"] = "Имя не похоже на имя"
+
+    phone = normalize_phone(payload.get("phone"))
+    if not phone:
+        errors["phone"] = "Телефон не похож на российский номер"
+
+    channel = payload.get("channel")
+    if channel not in CHANNELS:
+        errors["channel"] = "Неизвестный способ связи"
+
+    if clean_text(payload.get("company"), 100):
+        # Ловушка для ботов: поле скрыто от человека и всегда должно быть пустым.
+        errors["company"] = "spam"
+
+    answers = payload.get("answers")
+    if not isinstance(answers, list):
+        answers = []
+    safe_answers = []
+    for item in answers[:12]:
+        if not isinstance(item, dict):
+            continue
+        safe_answers.append(
+            {
+                "question": clean_text(item.get("question"), 120),
+                "answer": clean_text(item.get("answer"), 120),
+            }
+        )
+
+    price = payload.get("price") if isinstance(payload.get("price"), dict) else {}
+    low = price.get("low")
+    high = price.get("high")
+    if not isinstance(low, (int, float)) or not 0 <= low <= 10_000_000:
+        low = None
+    if not isinstance(high, (int, float)) or not 0 <= high <= 10_000_000:
+        high = None
+
+    source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
+    safe_source = {
+        key: clean_text(source.get(key), 120)
+        for key in ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "referrer", "page")
+        if source.get(key)
+    }
+
+    lead = {
+        "id": uuid.uuid4().hex[:12],
+        "received_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "name": name,
+        "phone": phone,
+        "channel": channel,
+        "channel_label": CHANNELS.get(channel, "—"),
+        "answers": safe_answers,
+        "price": {"low": low, "high": high},
+        "source": safe_source,
+        "client_id": clean_text(payload.get("clientId"), 64),
+        "remote_ip": remote_ip,
+        "user_agent": clean_text(user_agent, 200),
+    }
+    return lead, errors
+
+
+def escape_html(value):
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def format_money(value):
+    if value is None:
+        return "—"
+    return "{:,}".format(int(round(value))).replace(",", " ") + " ₽"
+
+
+def render_message(lead):
+    received = datetime.fromisoformat(lead["received_at"]).astimezone(MSK)
+    lines = [
+        "<b>Заявка с квиза</b>",
+        "",
+        "<b>%s</b>" % escape_html(lead["name"]),
+        "%s · %s" % (escape_html(lead["phone"]), escape_html(lead["channel_label"])),
+    ]
+    if lead["channel"] == "telegram":
+        lines.append("Написать: https://t.me/+%s" % lead["phone"].lstrip("+"))
+
+    low = lead["price"].get("low")
+    high = lead["price"].get("high")
+    if low and high:
+        lines += ["", "Вилка на экране: <b>%s — %s</b>" % (format_money(low), format_money(high))]
+
+    if lead["answers"]:
+        lines.append("")
+        for index, item in enumerate(lead["answers"], start=1):
+            lines.append(
+                "%d. %s — <b>%s</b>"
+                % (index, escape_html(item["question"]), escape_html(item["answer"]))
+            )
+
+    source = lead.get("source") or {}
+    if source:
+        lines.append("")
+        campaign = " / ".join(
+            escape_html(source[key])
+            for key in ("utm_source", "utm_medium", "utm_campaign")
+            if source.get(key)
+        )
+        if campaign:
+            lines.append("Кампания: %s" % campaign)
+        if source.get("utm_term"):
+            lines.append("Запрос: %s" % escape_html(source["utm_term"]))
+        if source.get("referrer"):
+            lines.append("Переход с: %s" % escape_html(source["referrer"]))
+
+    lines += ["", "%s МСК · №%s" % (received.strftime("%d.%m.%Y %H:%M"), lead["id"])]
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# Ограничение частоты
+# --------------------------------------------------------------------------- #
+
+class RateLimiter:
+    def __init__(self, per_hour):
+        self._per_hour = max(1, per_hour)
+        self._hits = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key):
+        now = time.monotonic()
+        cutoff = now - 3600
+        with self._lock:
+            bucket = [t for t in self._hits.get(key, []) if t > cutoff]
+            if len(bucket) >= self._per_hour:
+                self._hits[key] = bucket
+                return False
+            bucket.append(now)
+            self._hits[key] = bucket
+            if len(self._hits) > 5000:
+                self._hits = {
+                    k: v for k, v in self._hits.items() if v and v[-1] > cutoff
+                }
+            return True
+
+
+# --------------------------------------------------------------------------- #
+# Фоновая переотправка
+# --------------------------------------------------------------------------- #
+
+class OutboxWorker(threading.Thread):
+    """Раз в минуту пытается доставить всё, что лежит в outbox."""
+
+    daemon = True
+
+    def __init__(self, store, transport, interval=60.0):
+        super().__init__(name="outbox")
+        self._store = store
+        self._transport = transport
+        self._interval = interval
+        self._wake = threading.Event()
+        self._stop = threading.Event()
+
+    def poke(self):
+        self._wake.set()
+
+    def stop(self):
+        self._stop.set()
+        self._wake.set()
+
+    def run(self):
+        while not self._stop.is_set():
+            self._wake.wait(self._interval)
+            self._wake.clear()
+            if self._stop.is_set():
+                return
+            pending = self._store.pending()
+            if not pending:
+                continue
+            log.info("В очереди %d заявок, пробую отправить", len(pending))
+            for lead in pending:
+                ok, reason = self._transport.send_message(render_message(lead))
+                if ok:
+                    self._store.mark_sent(lead["id"])
+                    log.info("Заявка %s доставлена из очереди", lead["id"])
+                else:
+                    log.warning("Заявка %s всё ещё не уходит: %s", lead["id"], reason)
+                    break  # смысла долбить остальные нет — путь всё равно закрыт
+
+
+# --------------------------------------------------------------------------- #
+# HTTP
+# --------------------------------------------------------------------------- #
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    server_version = "%s/%s" % (APP_NAME, VERSION)
+    protocol_version = "HTTP/1.1"
+
+    # --- служебное ---------------------------------------------------------- #
+
+    def log_message(self, fmt, *args):
+        log.info("%s %s", self.address_string(), fmt % args)
+
+    def _origin_header(self):
+        origin = (self.headers.get("Origin") or "").rstrip("/")
+        if "*" in ALLOWED_ORIGINS:
+            return origin or "*"
+        if origin in ALLOWED_ORIGINS:
+            return origin
+        return ""
+
+    def _send(self, status, payload):
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        allow = self._origin_header()
+        if allow:
+            self.send_header("Access-Control-Allow-Origin", allow)
+            self.send_header("Vary", "Origin")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _client_ip(self):
+        forwarded = self.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()[:45]
+        return self.client_address[0]
+
+    # --- методы ------------------------------------------------------------- #
+
+    def do_OPTIONS(self):  # noqa: N802
+        self.send_response(204)
+        allow = self._origin_header()
+        if allow:
+            self.send_header("Access-Control-Allow-Origin", allow)
+            self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_GET(self):  # noqa: N802
+        if self.path.rstrip("/") in ("/api/health", "/health"):
+            self._send(
+                200,
+                {
+                    "ok": True,
+                    "service": APP_NAME,
+                    "version": VERSION,
+                    "telegram_path": self.server.transport.working_path,
+                    "pending": self.server.store.pending_count(),
+                    "configured": bool(BOT_TOKEN and CHAT_ID),
+                },
+            )
+            return
+        self._send(404, {"ok": False, "error": "not_found"})
+
+    def do_POST(self):  # noqa: N802
+        if self.path.rstrip("/") not in ("/api/lead", "/lead"):
+            self._send(404, {"ok": False, "error": "not_found"})
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0 or length > MAX_BODY:
+            self._send(413, {"ok": False, "error": "bad_size"})
+            return
+
+        raw = self.rfile.read(length)
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            self._send(400, {"ok": False, "error": "bad_json"})
+            return
+        if not isinstance(payload, dict):
+            self._send(400, {"ok": False, "error": "bad_json"})
+            return
+
+        ip = self._client_ip()
+        if not self.server.limiter.allow(ip):
+            log.warning("Превышен лимит заявок с %s", ip)
+            self._send(429, {"ok": False, "error": "rate_limited"})
+            return
+
+        lead, errors = parse_lead(payload, ip, self.headers.get("User-Agent", ""))
+        if errors:
+            if errors.get("company"):
+                # Ловушка сработала: боту отвечаем как будто всё хорошо.
+                log.warning("Ловушка сработала, заявка с %s отброшена", ip)
+                self._send(200, {"ok": True, "id": "-"})
+                return
+            self._send(422, {"ok": False, "error": "invalid", "fields": errors})
+            return
+
+        # Сначала на диск — потом всё остальное. Заявка не теряется.
+        try:
+            self.server.store.append(lead)
+            self.server.store.enqueue(lead)
+        except OSError as exc:
+            log.exception("Не удалось сохранить заявку: %s", exc)
+            self._send(500, {"ok": False, "error": "storage"})
+            return
+
+        ok, reason = self.server.transport.send_message(render_message(lead))
+        if ok:
+            self.server.store.mark_sent(lead["id"])
+            log.info("Заявка %s принята и отправлена", lead["id"])
+        else:
+            log.error("Заявка %s сохранена, но не отправлена: %s", lead["id"], reason)
+            self.server.outbox.poke()
+
+        # Для человека результат один и тот же: заявка принята.
+        self._send(200, {"ok": True, "id": lead["id"]})
+
+
+class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    address_family = socket.AF_INET6 if ":" in BIND else socket.AF_INET
+
+
+def main():
+    if not BOT_TOKEN or not CHAT_ID:
+        log.warning(
+            "AUREA_KVIZ_BOT_TOKEN или AUREA_KVIZ_CHAT_ID не заданы. "
+            "Сервис поднимется и будет сохранять заявки, но отправлять их не сможет."
+        )
+
+    store = LeadStore(DATA_DIR)
+    transport = TelegramTransport(BOT_TOKEN, IP_FAMILY_PREF)
+    transport.probe()
+
+    outbox = OutboxWorker(store, transport)
+    outbox.start()
+    outbox.poke()
+
+    server = Server((BIND, PORT), Handler)
+    server.store = store
+    server.transport = transport
+    server.outbox = outbox
+    server.limiter = RateLimiter(RATE_PER_HOUR)
+
+    log.info("%s %s слушает %s:%s", APP_NAME, VERSION, BIND, PORT)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        outbox.stop()
+        server.server_close()
+        log.info("Остановлен")
+
+
+if __name__ == "__main__":
+    main()

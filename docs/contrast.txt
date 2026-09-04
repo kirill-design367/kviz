@@ -1,0 +1,12 @@
+ink / paper                #14130F на #F3F0EA = 16.34:1  нужно 4.5  OK
+ink-soft / paper           #5A564C на #F3F0EA =  6.43:1  нужно 4.5  OK
+ink-faint / paper          #6E685C на #F3F0EA =  4.86:1  нужно 4.5  OK
+gold / paper               #7E5F16 на #F3F0EA =  5.22:1  нужно 4.5  OK
+paper / ink (кнопка)       #F3F0EA на #14130F = 16.34:1  нужно 4.5  OK
+ink / paper-raised         #14130F на #FBFAF7 = 17.81:1  нужно 4.5  OK
+ink-soft / paper-raised    #5A564C на #FBFAF7 =  7.01:1  нужно 4.5  OK
+ink / gold-soft            #14130F на #F2E8D0 = 15.25:1  нужно 4.5  OK
+line / paper (граница)     #CFC7B6 на #F3F0EA =  1.48:1  нужно 1.4  OK
+error / paper              #A03024 на #F3F0EA =  6.27:1  нужно 4.5  OK
+
+Итог: вся палитра проходит

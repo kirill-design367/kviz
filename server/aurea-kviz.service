@@ -1,0 +1,45 @@
+[Unit]
+Description=AUREA · приёмник заявок с квиз-лендинга
+Documentation=https://github.com/kirill-design367/kviz
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aureakviz
+Group=aureakviz
+WorkingDirectory=/opt/aurea-kviz
+ExecStart=/usr/bin/env python3 /opt/aurea-kviz/app.py
+EnvironmentFile=/etc/aurea-kviz/kviz.env
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aurea-kviz
+
+# Изоляция: сервису нужен только свой каталог данных и сеть.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+ReadWritePaths=/var/lib/aurea-kviz
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

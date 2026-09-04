@@ -1,0 +1,205 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ */
+/* Шрифты. Оба подмножества собраны из полных файлов и проверены по    */
+/* таблице cmap: полная русская кириллица, ₽, №, кавычки-ёлочки.       */
+/* Переменные, одна ось веса — один файл на всю гарнитуру.             */
+/* ------------------------------------------------------------------ */
+
+@font-face {
+  font-family: 'Onest';
+  src: url('/fonts/onest-var.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0400-045F, U+0490-0491, U+2010-2026, U+2116, U+20BD, U+2212;
+}
+
+@font-face {
+  font-family: 'Cormorant';
+  src: url('/fonts/cormorant-var.woff2') format('woff2-variations');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0400-045F, U+0490-0491, U+2010-2026, U+2116, U+20BD, U+2212;
+}
+
+/* Подложка системного шрифта подогнана по метрикам Onest,
+   чтобы подмена шрифта не дёргала вёрстку (CLS). */
+@font-face {
+  font-family: 'Onest Fallback';
+  src: local('Arial'), local('Helvetica'), local('Liberation Sans');
+  size-adjust: 102%;
+  ascent-override: 96%;
+  descent-override: 24%;
+  line-gap-override: 0%;
+}
+
+/* ------------------------------------------------------------------ */
+/* Токены                                                              */
+/* ------------------------------------------------------------------ */
+
+:root {
+  color-scheme: light;
+
+  --paper: #f3f0ea;
+  --paper-raised: #fbfaf7;
+  --ink: #14130f;
+  --ink-soft: #5a564c;
+  --ink-faint: #6e685c;
+  --line: #cfc7b6;
+  --line-soft: #e3ddd1;
+  --gold: #7e5f16;
+  --gold-soft: #f2e8d0;
+  --on-ink: #f3f0ea;
+  --on-ink-soft: #a49f92;
+  --error: #a03024;
+
+  --font-sans: 'Onest', 'Onest Fallback', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Cormorant', Georgia, 'Times New Roman', serif;
+
+  --gutter: 1.25rem;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur: 0.5s;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --gutter: 2.5rem;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* База                                                                */
+/* ------------------------------------------------------------------ */
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* Крупный кириллический набор рвётся некрасиво: балансируем строки
+   и разрешаем переносы там, где слово длиннее колонки. */
+h1,
+h2,
+.balance {
+  text-wrap: balance;
+  hyphens: auto;
+}
+
+::selection {
+  background: var(--gold-soft);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* ------------------------------------------------------------------ */
+/* Утилиты                                                             */
+/* ------------------------------------------------------------------ */
+
+.screen {
+  min-height: 100svh;
+  min-height: 100dvh;
+}
+
+.shell {
+  width: 100%;
+  max-width: 68rem;
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* Точка входа для GSAP: элемент спрятан до анимации, но занимает место.
+   Если скрипт не выполнится, класс снимет CSS-фолбэк ниже. */
+.reveal {
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.js-ready .reveal {
+  opacity: 0;
+}
+
+html:not(.js-ready) .reveal {
+  opacity: 1;
+}
+
+/* Цифра вилки: серифные табличные цифры, чтобы диапазон не «прыгал». */
+.figure {
+  font-family: var(--font-display);
+  font-variant-numeric: lining-nums tabular-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  letter-spacing: -0.01em;
+}
+
+/* Инверсия для экрана результата */
+.inverted {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+.inverted ::selection {
+  background: var(--gold-soft);
+  color: var(--ink);
+}
+
+.inverted :focus-visible {
+  outline-color: var(--gold-soft);
+}
+
+/* ------------------------------------------------------------------ */
+/* Уважение к настройке «меньше движения»                              */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .reveal,
+  html:not(.js-ready) .reveal,
+  .js-ready .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
