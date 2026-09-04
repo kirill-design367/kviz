@@ -18,7 +18,6 @@ export function Landing() {
   useSmoothScroll(!open);
 
   useEffect(() => {
-    document.documentElement.classList.add('js-ready');
     initMetrika();
     captureSource();
 
@@ -44,8 +43,10 @@ export function Landing() {
 
   return (
     <>
-      <Hero onStart={start} reducedMotion={reducedMotion} />
-      <HowItWorks />
+      <main>
+        <Hero onStart={start} />
+        <HowItWorks />
+      </main>
       <SiteFooter />
 
       {open ? (

@@ -1,8 +1,13 @@
+# Единственное описание службы. В установщик оно попадает целиком
+# (scripts/build-installer.sh), поэтому разойтись копиям неоткуда.
 [Unit]
 Description=AUREA · приёмник заявок с квиз-лендинга
 Documentation=https://github.com/kirill-design367/kviz
 After=network-online.target
 Wants=network-online.target
+# Иначе серия быстрых падений загоняет юнит в failed насовсем,
+# и сервис не поднимется даже после того, как причина устранена.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -13,11 +18,9 @@ ExecStart=/usr/bin/env python3 /opt/aurea-kviz/app.py
 EnvironmentFile=/etc/aurea-kviz/kviz.env
 Restart=always
 RestartSec=3
-StandardOutput=journal
-StandardError=journal
 SyslogIdentifier=aurea-kviz
 
-# Изоляция: сервису нужен только свой каталог данных и сеть.
+# Изоляция: службе нужен только свой каталог данных и сеть.
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
@@ -35,9 +38,8 @@ LockPersonality=true
 MemoryDenyWriteExecute=true
 RemoveIPC=true
 ReadWritePaths=/var/lib/aurea-kviz
+# AF_UNIX обязателен: без него ломается резолвер, а выглядит это как «нет сети».
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-SystemCallFilter=@system-service
-SystemCallErrorNumber=EPERM
 CapabilityBoundingSet=
 AmbientCapabilities=
 

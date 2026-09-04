@@ -10,7 +10,9 @@ type Props = {
 
 export function Progress({ current, total, reducedMotion }: Props) {
   const fill = useRef<HTMLDivElement>(null);
-  const ratio = Math.min(1, Math.max(0, current / total));
+  // Считаем текущий вопрос уже начатым: на первом экране полоса не должна
+  // быть пустой, иначе кажется, что ничего не происходит.
+  const ratio = Math.min(1, Math.max(0, (current + 1) / total));
 
   useEffect(() => {
     const node = fill.current;
@@ -45,7 +47,7 @@ export function Progress({ current, total, reducedMotion }: Props) {
         </span>
       </div>
       <div
-        className="h-px w-full bg-line-soft"
+        className="h-[2px] w-full bg-line-soft"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={total}
@@ -54,7 +56,7 @@ export function Progress({ current, total, reducedMotion }: Props) {
       >
         <div
           ref={fill}
-          className="h-px w-full origin-left bg-ink will-change-transform"
+          className="h-[2px] w-full origin-left bg-ink will-change-transform"
           style={{ transform: `scaleX(${ratio})` }}
         />
       </div>

@@ -52,7 +52,7 @@ export function PriceResult({ price, reducedMotion }: Props) {
 
       <p
         data-appear
-        className="figure text-[2.6rem] leading-[1.02] tracking-[-0.015em] xs:text-[3.1rem] sm:text-[4.2rem] md:text-[5.4rem]"
+        className="figure min-h-[2.7em] text-[2.6rem] leading-[1.02] tracking-[-0.015em] xs:text-[3.1rem] sm:min-h-[1.1em] sm:text-[4.2rem] md:text-[5.4rem]"
       >
         <span className="whitespace-nowrap">{formatMoney(price.low)}</span>
         <span aria-hidden className="mx-2 text-on-ink-soft md:mx-4">
@@ -63,9 +63,21 @@ export function PriceResult({ price, reducedMotion }: Props) {
         </span>
       </p>
 
+      <p data-appear className="mt-6 max-w-column text-[0.98rem] leading-relaxed text-on-ink-soft">
+        Нижняя граница — работа ровно по вашим ответам. Верхняя — если по ходу
+        добавятся детали.
+      </p>
+
+      <p
+        data-appear
+        className="mt-10 text-[0.78rem] uppercase tracking-[0.14em] text-on-ink-soft md:mt-12"
+      >
+        Что повлияло на диапазон
+      </p>
+
       <dl
         data-appear
-        className="mt-9 grid max-w-[38rem] gap-px overflow-hidden border-y border-on-ink-soft/25 md:mt-11 md:grid-cols-3"
+        className="mt-4 grid max-w-[38rem] gap-px overflow-hidden border-y border-on-ink-soft/25 md:grid-cols-3"
       >
         {price.factors.map((factor) => (
           <div key={factor.label} className="border-b border-on-ink-soft/25 py-4 md:border-b-0">
@@ -78,9 +90,8 @@ export function PriceResult({ price, reducedMotion }: Props) {
       </dl>
 
       <p data-appear className="mt-7 max-w-column text-[0.95rem] leading-relaxed text-on-ink-soft">
-        Считал по трём ответам: задача, объём и приоритет. Ответ про бюджет
-        в расчёт не входит — иначе вы увидели бы ровно ту цифру, которую сами
-        и выбрали. Точная сумма зависит от деталей, их разберём в разговоре.
+        Ответ про бюджет в расчёт не входит — иначе вы увидели бы ровно ту цифру,
+        которую сами и выбрали. Точную сумму назову, когда разберём детали.
       </p>
     </div>
   );

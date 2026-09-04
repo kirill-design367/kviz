@@ -65,6 +65,13 @@ OUTBOX_DIR = os.path.join(DATA_DIR, "outbox")
 SENT_DIR = os.path.join(DATA_DIR, "sent")
 MAX_BODY = 16 * 1024
 MSK = timezone(timedelta(hours=3))
+# Адреса, от которых принимаются заголовки X-Real-IP и X-Forwarded-For.
+# По умолчанию только локальная петля: сервис слушает 127.0.0.1 и стоит за nginx.
+TRUSTED_PROXIES = {
+    a.strip()
+    for a in os.environ.get("AUREA_KVIZ_TRUSTED_PROXIES", "127.0.0.1,::1").split(",")
+    if a.strip()
+}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -154,28 +161,32 @@ class TelegramTransport:
             if not infos:
                 results[name] = "нет адреса"
                 continue
-            af, socktype, proto, _c, sa = infos[0]
-            try:
-                sock = socket.socket(af, socktype, proto)
-            except OSError as exc:
-                # На хосте вообще нет стека этого семейства.
-                results[name] = "не поддерживается системой (%s)" % exc
-                continue
-            sock.settimeout(6.0)
+            address = infos[0][4][0]
             started = time.monotonic()
+            conn = None
             try:
-                sock.connect(sa)
-                results[name] = "отвечает за %d мс (%s)" % (
+                # Проверяем полноценный HTTPS-запрос, а не только TCP-connect.
+                # Фильтрация умеет принять TCP и оборвать соединение уже
+                # на TLS: чистый connect() дал бы ложное «работает».
+                conn = FamilyHTTPSConnection(TELEGRAM_HOST, family, 8.0, self._ssl)
+                conn.request("GET", "/", headers={"User-Agent": "%s/%s" % (APP_NAME, VERSION)})
+                status = conn.getresponse().status
+                results[name] = "отвечает за %d мс (%s, HTTP %s)" % (
                     int((time.monotonic() - started) * 1000),
-                    sa[0],
+                    address,
+                    status,
                 )
                 with self._lock:
                     if self._preferred is None and family in self._candidates:
                         self._preferred = family
-            except OSError as exc:
+            except Exception as exc:  # noqa: BLE001
                 results[name] = "не отвечает (%s)" % exc
             finally:
-                sock.close()
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:  # noqa: BLE001
+                        pass
         for name, verdict in results.items():
             log.info("Telegram по %s: %s", name, verdict)
         if self._preferred is None:
@@ -595,10 +606,44 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _client_ip(self):
+        """Адрес, которому можно верить.
+
+        X-Forwarded-For брать ПЕРВЫМ элементом нельзя: nginx с
+        $proxy_add_x_forwarded_for дописывает настоящий адрес в КОНЕЦ, а начало
+        списка приходит от браузера и подделывается одной строкой — ограничение
+        частоты обходилось бы тривиально. X-Real-IP ставит сам nginx, поэтому
+        он в приоритете, а из X-Forwarded-For берётся последний элемент.
+        """
+        peer = self.client_address[0]
+        # Заголовкам верим, только если запрос пришёл от локального nginx.
+        # Иначе любой, кто достучится до порта напрямую, назовётся кем угодно.
+        if peer not in TRUSTED_PROXIES:
+            return peer
+        real = (self.headers.get("X-Real-IP") or "").strip()
+        if real:
+            return real[:45]
         forwarded = self.headers.get("X-Forwarded-For", "")
         if forwarded:
-            return forwarded.split(",")[0].strip()[:45]
-        return self.client_address[0]
+            return forwarded.split(",")[-1].strip()[:45]
+        return peer
+
+    def _drain(self):
+        """Дочитать тело запроса.
+
+        При HTTP/1.1 с keep-alive ответ без вычитанного тела оставляет байты
+        в сокете, и они разбираются как начало следующего запроса — сыплются
+        необъяснимые 400.
+        """
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        remaining = min(max(length, 0), MAX_BODY * 4)
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 65536))
+            if not chunk:
+                break
+            remaining -= len(chunk)
 
     # --- методы ------------------------------------------------------------- #
 
@@ -632,6 +677,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         if self.path.rstrip("/") not in ("/api/lead", "/lead"):
+            self._drain()
             self._send(404, {"ok": False, "error": "not_found"})
             return
 
@@ -640,6 +686,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except ValueError:
             length = 0
         if length <= 0 or length > MAX_BODY:
+            self._drain()
             self._send(413, {"ok": False, "error": "bad_size"})
             return
 
@@ -678,16 +725,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send(500, {"ok": False, "error": "storage"})
             return
 
-        ok, reason = self.server.transport.send_message(render_message(lead))
-        if ok:
-            self.server.store.mark_sent(lead["id"])
-            log.info("Заявка %s принята и отправлена", lead["id"])
-        else:
-            log.error("Заявка %s сохранена, но не отправлена: %s", lead["id"], reason)
-            self.server.outbox.poke()
-
-        # Для человека результат один и тот же: заявка принята.
+        # Отвечаем сразу. Отправку в Telegram делает фоновый поток: если оба
+        # пути до api.telegram.org лежат, синхронная отправка держала бы
+        # посетителя до двух таймаутов подряд, а nginx успел бы отвалиться
+        # по proxy_read_timeout. Заявка уже на диске, терять нечего.
+        log.info("Заявка %s принята", lead["id"])
         self._send(200, {"ok": True, "id": lead["id"]})
+        self.server.outbox.poke()
 
 
 class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -705,19 +749,24 @@ def main():
 
     store = LeadStore(DATA_DIR)
     transport = TelegramTransport(BOT_TOKEN, IP_FAMILY_PREF)
-    transport.probe()
-
     outbox = OutboxWorker(store, transport)
-    outbox.start()
-    outbox.poke()
 
+    # Сокет поднимается ПЕРВЫМ делом. Проба обоих путей до Telegram занимает
+    # секунды; если делать её до bind, systemd при Type=simple уже считает
+    # службу запущенной, а nginx в это окно отдаёт 502.
     server = Server((BIND, PORT), Handler)
     server.store = store
     server.transport = transport
     server.outbox = outbox
     server.limiter = RateLimiter(RATE_PER_HOUR)
-
     log.info("%s %s слушает %s:%s", APP_NAME, VERSION, BIND, PORT)
+
+    def warm_up():
+        transport.probe()
+        outbox.poke()
+
+    outbox.start()
+    threading.Thread(target=warm_up, name="probe", daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

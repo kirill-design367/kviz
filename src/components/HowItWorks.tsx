@@ -1,27 +1,13 @@
-const STEPS = [
-  {
-    n: '01',
-    title: 'Отвечаете на семь вопросов',
-    body: 'Про задачу, объём и сроки. По одному вопросу на экран, можно вернуться и поменять ответ.',
-  },
-  {
-    n: '02',
-    title: 'Видите вилку цены',
-    body: 'Диапазон считается по вашим ответам и появляется сразу на экране — до того, как я спрошу контакты.',
-  },
-  {
-    n: '03',
-    title: 'Получаете точный расчёт',
-    body: 'Если цифра подходит — оставляете телефон, и я присылаю смету по вашей задаче и близкие работы.',
-  },
-];
+import { STEPS } from './steps';
 
+/** Ниже первого экрана — только для узких экранов: на широких эти же три шага
+    стоят в правой колонке первого экрана, и повторять их незачем. */
 export function HowItWorks() {
   return (
-    <section className="shell border-t border-line-soft py-16 md:py-24">
+    <section className="shell border-t border-line-soft py-16 md:py-20 lg:hidden">
       <h2 className="text-[0.8rem] uppercase tracking-[0.16em] text-ink-faint">Как это устроено</h2>
 
-      <ol className="mt-10 grid gap-10 md:mt-14 md:grid-cols-3 md:gap-12">
+      <ol className="mt-10 grid gap-10 md:grid-cols-3 md:gap-12">
         {STEPS.map((step) => (
           <li key={step.n}>
             <span className="figure text-[0.95rem] text-gold">{step.n}</span>

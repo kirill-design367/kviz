@@ -50,7 +50,7 @@
   --ink-soft: #5a564c;
   --ink-faint: #6e685c;
   --line: #cfc7b6;
-  --line-soft: #e3ddd1;
+  --line-soft: #ded7c8;
   --gold: #7e5f16;
   --gold-soft: #f2e8d0;
   --on-ink: #f3f0ea;
@@ -127,9 +127,10 @@ textarea {
 /* Утилиты                                                             */
 /* ------------------------------------------------------------------ */
 
+/* Именно svh, а не dvh: dvh меняется, когда браузер прячет адресную строку,
+   и первый экран «дышит» при скролле. svh стабилен. */
 .screen {
   min-height: 100svh;
-  min-height: 100dvh;
 }
 
 .shell {
@@ -144,26 +145,34 @@ textarea {
   border-top: 1px solid var(--line-soft);
 }
 
-/* Точка входа для GSAP: элемент спрятан до анимации, но занимает место.
-   Если скрипт не выполнится, класс снимет CSS-фолбэк ниже. */
+/* Появление первого экрана сделано на CSS, а не на GSAP: это единственная
+   анимация до первого касания, и ради неё незачем тянуть библиотеку
+   в критический путь. GSAP грузится позже — на переходах между вопросами,
+   где он действительно нужен. */
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .reveal {
-  opacity: 0;
-  will-change: transform, opacity;
-}
-
-.js-ready .reveal {
-  opacity: 0;
-}
-
-html:not(.js-ready) .reveal {
-  opacity: 1;
+  animation: reveal-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--d, 0s);
 }
 
 /* Цифра вилки: серифные табличные цифры, чтобы диапазон не «прыгал». */
 .figure {
   font-family: var(--font-display);
+  /* У Cormorant по умолчанию старостильные цифры: единица становится похожа
+     на римскую I, семёрка уходит под строку. Для цены это читается плохо,
+     поэтому включаем прописные табличные. */
   font-variant-numeric: lining-nums tabular-nums;
-  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-feature-settings: 'lnum' 1, 'tnum' 1, 'onum' 0;
   letter-spacing: -0.01em;
 }
 
@@ -196,9 +205,9 @@ html:not(.js-ready) .reveal {
     scroll-behavior: auto !important;
   }
 
-  .reveal,
-  html:not(.js-ready) .reveal,
-  .js-ready .reveal {
+  /* Появление первого экрана выключается целиком, а не ускоряется. */
+  .reveal {
+    animation: none !important;
     opacity: 1 !important;
     transform: none !important;
   }

@@ -22,8 +22,14 @@ type Props = {
   onClose: () => void;
 };
 
+// Вперёд — спокойно, назад — быстрее: исправление своей ошибки не должно
+// ощущаться как наказание.
 const OUT_DURATION = 0.2;
 const IN_DURATION = 0.42;
+const BACK_OUT_DURATION = 0.14;
+const BACK_IN_DURATION = 0.28;
+/** Сколько держать защёлку, когда анимация выключена: страховка от двойного тапа. */
+const TAP_GUARD_MS = 140;
 
 export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, onClose }: Props) {
   const [answers, setAnswers] = useState<Answers>(initialAnswers);
@@ -75,7 +81,7 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
         {
           opacity: 1,
           y: 0,
-          duration: IN_DURATION,
+          duration: direction.current > 0 ? IN_DURATION : BACK_IN_DURATION,
           ease: 'power3.out',
           onComplete: () => {
             locked.current = false;
@@ -99,7 +105,11 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
 
       if (reducedMotion || !card.current) {
         apply();
-        locked.current = false;
+        // Двойной тап по варианту приходит в одном кадре и без анимации
+        // проскочил бы сразу в следующий вопрос.
+        window.setTimeout(() => {
+          locked.current = false;
+        }, TAP_GUARD_MS);
         return;
       }
 
@@ -112,7 +122,7 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
         gsap.to(card.current, {
           opacity: 0,
           y: dir > 0 ? -14 : 14,
-          duration: OUT_DURATION,
+          duration: dir > 0 ? OUT_DURATION : BACK_OUT_DURATION,
           ease: 'power2.in',
           onComplete: apply,
         });

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { formatPhone, isValidPhone, normalizePhone } from '@/lib/phone';
 import { GOALS, reachGoal } from '@/lib/metrika';
@@ -19,8 +20,8 @@ type Props = {
 };
 
 const CHANNELS: { id: Channel; label: string; hint: string }[] = [
-  { id: 'telegram', label: 'Telegram', hint: 'напишу в мессенджер' },
-  { id: 'call', label: 'Звонок', hint: 'наберу по телефону' },
+  { id: 'telegram', label: 'Telegram', hint: 'в мессенджер' },
+  { id: 'call', label: 'Звонок', hint: 'по телефону' },
 ];
 
 export function LeadForm({ answers, price, onSent }: Props) {
@@ -70,6 +71,9 @@ export function LeadForm({ answers, price, onSent }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      if (response.status === 429) {
+        throw new Error('too_many');
+      }
       if (!response.ok) throw new Error(`ответ сервера ${response.status}`);
       setStatus('sent');
       reachGoal(GOALS.leadSent);
@@ -78,7 +82,10 @@ export function LeadForm({ answers, price, onSent }: Props) {
       busy.current = false;
       setStatus('failed');
       setErrors({
-        form: 'Не получилось отправить. Проверьте связь и попробуйте ещё раз.',
+        form:
+          error instanceof Error && error.message === 'too_many'
+            ? 'Слишком много заявок с этого адреса. Попробуйте через несколько минут.'
+            : 'Не получилось отправить. Проверьте связь и попробуйте ещё раз.',
       });
       reachGoal(GOALS.leadFailed, { reason: String(error) }, false);
     }
@@ -179,6 +186,18 @@ export function LeadForm({ answers, price, onSent }: Props) {
       <p className="mt-5 text-[0.92rem] leading-relaxed text-on-ink-soft">
         Перезвоню в течение семи минут в рабочее время. Телефон нужен только
         для ответа по этой заявке — никаких рассылок.
+      </p>
+
+      <p className="mt-3 text-[0.85rem] leading-relaxed text-on-ink-soft">
+        Отправляя форму, вы соглашаетесь на{' '}
+        <Link
+          href="/privacy"
+          target="_blank"
+          className="underline decoration-on-ink-soft/50 underline-offset-4 transition-colors hover:decoration-on-ink"
+        >
+          обработку персональных данных
+        </Link>
+        .
       </p>
     </form>
   );
