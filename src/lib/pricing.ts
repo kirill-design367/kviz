@@ -3,9 +3,9 @@ import { QUESTIONS, type Answers } from './quiz';
 /**
  * Расчёт вилки стоимости.
  *
- * Считается ТОЛЬКО по трём ответам: что делаем (1), сколько страниц (5),
- * что важнее (6). Бюджет (вопрос 7) в расчёт не входит намеренно: иначе человек
- * увидел бы ровно ту цифру, которую сам и выбрал, и она перестала бы что-то значить.
+ * Основа — три ответа: что делаем (1), сколько страниц (5), что важнее (6).
+ * Названный бюджет (7) не задаёт цену, но и не игнорируется: он подтягивает
+ * вилку к себе, когда расходится с ней. Подробности — в budgetPull ниже.
  *
  * Ориентиры студии — это НИЖНИЕ границы («от»), поэтому ни один множитель
  * не опускает низ вилки под соответствующий ориентир. «Скорость запуска»
@@ -78,6 +78,40 @@ const CHEAPEST_TASK: Exclude<Task, 'unsure'> = 'new';
 const DEAREST_TASK: Exclude<Task, 'unsure'> = 'shop';
 const CHEAPEST_PAGES: Exclude<Pages, 'unknown'> = 'upto5';
 const DEAREST_PAGES: Exclude<Pages, 'unknown'> = 'more5';
+
+/**
+ * Потолок, который человек назвал в вопросе о бюджете.
+ * null — значит ограничения нет: «больше 300 000» и «обсуждается» ничего
+ * не ограничивают, а отсутствие ответа тем более.
+ */
+const BUDGET_CEILING: Record<string, number | null> = {
+  lt50: 50_000,
+  '50-150': 150_000,
+  '150-300': 300_000,
+  gt300: null,
+  discuss: null,
+};
+
+const BUDGET_LABEL: Record<string, string> = {
+  lt50: 'до 50 000 ₽',
+  '50-150': '50–150 000 ₽',
+  '150-300': '150–300 000 ₽',
+};
+
+/**
+ * Насколько вилка идёт навстречу названному бюджету.
+ *
+ * Ровно половина пути. Не ноль — иначе человек, указавший 50 000, видит
+ * 380 000 и уходит, решив, что его не услышали. И не единица — иначе цена
+ * назначается по кошельку, а не по работе, и цифра перестаёт что-то значить.
+ * Низ вилки при этом никогда не опускается под ориентир студии: подвинуться
+ * навстречу можно, соврать нельзя. Вверх бюджет не двигает ничего — платить
+ * больше за ту же работу человек не должен только потому, что может.
+ */
+const BUDGET_PULL = 0.5;
+
+/** Насколько низ вилки должен превысить бюджет, чтобы об этом стоило сказать вслух. */
+const BUDGET_GAP_NOTE = 1.15;
 
 /** Приоритет: [множитель низа, множитель верха]. Низ никогда не меньше 1. */
 const PRIORITY: Record<string, { low: number; high: number; note: string }> = {
@@ -154,17 +188,36 @@ export function calculatePrice(answers: Answers): PriceRange {
   // Пол — это обещание студии, ниже ориентира он не опускается никогда.
   if (low < bases.low) low = bases.low;
 
+  // Названный бюджет тянет вилку к себе, но только вниз и только наполовину.
+  const budget = answers.budget ?? '';
+  const ceiling = BUDGET_CEILING[budget] ?? null;
+  let pulledToBudget = false;
+  if (ceiling !== null && ceiling < low) {
+    pulledToBudget = true;
+    low = Math.max(bases.low, roundTo(low + (ceiling - low) * BUDGET_PULL));
+    high = ceilTo(high + (ceiling - high) * BUDGET_PULL);
+  }
+
   // Диапазон должен читаться как диапазон, но не как «от забора до обеда».
   // Обе границы клампа считаются в свою сторону: иначе округление вверх
   // при понижающем ограничителе делает сам ограничитель недостижимым.
   if (high < low * MIN_SPREAD) high = ceilTo(low * MIN_SPREAD);
   if (high > low * maxSpread) high = floorTo(low * maxSpread);
 
+  // Если после сближения низ всё равно заметно выше названной суммы —
+  // об этом говорится прямо, а не заминается.
+  const budgetNote =
+    pulledToBudget && ceiling !== null && low > ceiling * BUDGET_GAP_NOTE
+      ? `Вы указали бюджет ${BUDGET_LABEL[budget]}. Ниже ${formatMoney(low)} ₽ за эту задачу я не берусь — иначе получится не то, за что можно ручаться. Если сумма принципиальна, обсудим, что реально сделать в неё.`
+      : null;
+
   return {
     low,
     high,
     uncertain,
-    caveat: caveatFor(task, pages, high),
+    // Про бюджет говорим в первую очередь: это конкретное расхождение,
+    // а не общее предупреждение о неточности.
+    caveat: budgetNote ?? caveatFor(task, pages, high),
     factors: [
       { label: 'Задача', value: TASK_LABEL[task] ?? '—' },
       { label: 'Объём', value: volumeLabel(task, pages) },
@@ -212,8 +265,8 @@ export function formatMoney(value: number): string {
   return value.toLocaleString('ru-RU').replace(/ |\s/g, ' ');
 }
 
-/** Ключи вопросов, которые действительно участвуют в расчёте. */
-export const PRICING_INPUTS = ['task', 'pages', 'priority'] as const;
+/** Ключи вопросов, которые участвуют в расчёте. */
+export const PRICING_INPUTS = ['task', 'pages', 'priority', 'budget'] as const;
 
-export const PRICING_IGNORED_LABEL =
+export const BUDGET_QUESTION_LABEL =
   QUESTIONS.find((q) => q.id === 'budget')?.title ?? 'Бюджет на проект';

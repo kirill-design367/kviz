@@ -24,10 +24,12 @@ type Props = {
 
 // Вперёд — спокойно, назад — быстрее: исправление своей ошибки не должно
 // ощущаться как наказание.
-const OUT_DURATION = 0.26;
-const IN_DURATION = 0.46;
-const BACK_OUT_DURATION = 0.18;
-const BACK_IN_DURATION = 0.32;
+// Суммарно вперёд — 0,6 с. Это потолок: семь вопросов при 0,72 с давали пять
+// секунд одних переходов, и быстрый тап попадал в защёлку и терялся.
+const OUT_DURATION = 0.22;
+const IN_DURATION = 0.38;
+const BACK_OUT_DURATION = 0.15;
+const BACK_IN_DURATION = 0.27;
 /** Сколько держать защёлку, когда анимация выключена: страховка от двойного тапа. */
 const TAP_GUARD_MS = 140;
 
@@ -269,11 +271,11 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
               листать за формой не нужно. На широком экране — две колонки,
               на телефоне — плотная колонка, которая помещается в экран. */}
           {view === 'result' ? (
-            <div className="grid items-start gap-5 lg:grid-cols-12 lg:gap-14">
-              <div className="lg:col-span-7">
+            <div className="mx-auto grid w-full max-w-[62rem] items-center gap-6 lg:grid-cols-2 lg:gap-16">
+              <div>
                 <PriceResult price={price} reducedMotion={reducedMotion} />
               </div>
-              <div className="lg:col-span-4 lg:col-start-9">
+              <div>
                 <LeadForm
                   answers={answers}
                   price={price}

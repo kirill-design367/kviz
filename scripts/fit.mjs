@@ -28,7 +28,7 @@ for (const v of [
 
   for (let i = 0; i < 7; i++) {
     await page.locator('[role="dialog"] ul li button').nth(1).click();
-    await page.waitForTimeout(620);
+    await page.waitForTimeout(780);
   }
   await page.waitForTimeout(900);
 

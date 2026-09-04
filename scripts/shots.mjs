@@ -39,16 +39,19 @@ async function run(browser, view) {
 
   // Наведение на вариант: видно, что карточка объёмная и вариант отзывается
   if (!view.isMobile) {
-    await page.locator('[role="dialog"] ul li button').nth(1).hover();
-    await page.mouse.move(560, 380);
-    await page.waitForTimeout(700);
+    const opt = page.locator('[role="dialog"] ul li button').nth(1);
+    const box = await opt.boundingBox();
+    // Ведём курсор внутрь варианта и оставляем там: нужен и наклон карточки,
+    // и заливка кнопки под указателем.
+    await page.mouse.move(box.x + box.width * 0.35, box.y + box.height / 2);
+    await page.waitForTimeout(800);
     await page.screenshot({ path: `${OUT}/03b-вопрос-наведение-${view.tag}.png` });
   }
 
   for (let i = 0; i < ANSWERS.length; i++) {
     const options = page.locator('[role="dialog"] ul li button');
     await options.nth(ANSWERS[i] - 1).click();
-    await page.waitForTimeout(650);
+    await page.waitForTimeout(780);
     if (i === 3) await page.screenshot({ path: `${OUT}/04-вопрос-5-${view.tag}.png` });
   }
 
@@ -83,10 +86,25 @@ async function run(browser, view) {
   const VAGUE = [4, 4, 1, 4, 4, 4, 5]; // «пока не определился», «не знаю»
   for (const pick of VAGUE) {
     await page.locator('[role="dialog"] ul li button').nth(pick - 1).click();
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(780);
   }
   await page.waitForTimeout(900);
   await page.screenshot({ path: `${OUT}/08-вилка-неопределённая-${view.tag}.png` });
+
+  // Дорогая задача при маленьком бюджете: видно, что вилка подтянулась
+  // и что расхождение названо словами
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.evaluate(() => localStorage.clear());
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: /Рассчитать стоимость/ }).click();
+  await page.waitForTimeout(600);
+  const TIGHT = [1, 1, 1, 2, 3, 3, 2]; // сайт с нуля, больше пяти, функциональность, бюджет 50–150 000
+  for (const pick of TIGHT) {
+    await page.locator('[role="dialog"] ul li button').nth(pick - 1).click();
+    await page.waitForTimeout(780);
+  }
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: `${OUT}/08b-вилка-малый-бюджет-${view.tag}.png` });
 
   // 404
   await page.goto(`${BASE}/нет-такой-страницы`, { waitUntil: 'networkidle' }).catch(() => {});

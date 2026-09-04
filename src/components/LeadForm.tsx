@@ -140,10 +140,10 @@ export function LeadForm({ answers, price, onSent }: Props) {
                   disabled={sending}
                   aria-pressed={active}
                   onClick={() => setChannel(item.id)}
-                  className={`option3d relative flex min-h-[46px] items-center justify-center rounded-xl border px-3 text-[0.98rem] font-medium transition-colors duration-200 ${
+                  className={`press flex min-h-[46px] items-center justify-center rounded-xl border px-3 text-[0.98rem] font-medium ${
                     active
-                      ? 'border-on-ink bg-on-ink/10 text-on-ink'
-                      : 'border-on-ink-soft/35 text-on-ink-soft hover:border-on-ink-soft'
+                      ? 'border-on-ink bg-on-ink/15 text-on-ink'
+                      : 'border-on-ink-soft/40 text-on-ink-soft hover:border-on-ink-soft hover:bg-on-ink/[0.06]'
                   }`}
                 >
                   {item.label}
@@ -174,18 +174,18 @@ export function LeadForm({ answers, price, onSent }: Props) {
       <button
         type="submit"
         disabled={sending || status === 'sent'}
-        className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-on-ink px-8 py-[0.95rem] text-[1.02rem] font-medium text-ink transition-transform duration-300 ease-aurea will-change-transform hover:-translate-y-0.5 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0"
+        className="btn btn--on-ink mt-4 inline-flex w-full items-center justify-center rounded-full bg-on-ink px-8 py-[0.95rem] text-[1.02rem] font-medium text-ink disabled:cursor-not-allowed disabled:opacity-70"
       >
         {sending ? 'Отправляю…' : 'Отправить'}
       </button>
 
-      <p className="mt-3 text-[0.86rem] leading-snug text-on-ink-soft">
-        Перезвоню в течение семи минут в рабочее время.
+      <p className="mt-3.5 text-[0.88rem] leading-relaxed text-on-ink-soft">
+        Дальше одно из двух: пришлю точный расчёт по вашей задаче или наберу,
+        и обсудим детали голосом. Как вам удобнее — так и сделаю.
       </p>
 
-      <p className="mt-1.5 text-[0.78rem] leading-snug text-on-ink-soft/85">
-        Телефон — только для ответа по заявке, рассылок нет. Отправляя форму,
-        вы соглашаетесь на{' '}
+      <p className="mt-2 text-[0.78rem] leading-snug text-on-ink-soft/85">
+        Отправляя форму, вы соглашаетесь на{' '}
         <Link
           href="/privacy"
           target="_blank"
@@ -195,6 +195,7 @@ export function LeadForm({ answers, price, onSent }: Props) {
         </Link>
         .
       </p>
+
     </form>
   );
 }

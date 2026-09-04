@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Hero } from './Hero';
-import { HowItWorks } from './HowItWorks';
 import { SiteFooter } from './SiteFooter';
 import { Quiz, type QuizView } from './Quiz';
 import { usePrefersReducedMotion, useSmoothScroll } from '@/lib/motion';
@@ -45,7 +44,6 @@ export function Landing() {
     <>
       <main>
         <Hero onStart={start} />
-        <HowItWorks />
       </main>
       <SiteFooter />
 

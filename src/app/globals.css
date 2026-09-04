@@ -84,6 +84,10 @@
   --on-ink: #f3f0ea;
   --on-ink-soft: #a49f92;
   --error: #a03024;
+  /* Заливка варианта ответа. Серая, не золотая: золото на всю площадь
+     кнопки перетягивает внимание с текста вопроса. */
+  --hover-fill: #e6e1d6;
+  --selected-fill: #dcd5c6;
 
   --font-sans: 'Onest', 'Onest Fallback', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Cormorant', Georgia, 'Times New Roman', serif;
@@ -293,15 +297,25 @@ textarea {
   transform: translate3d(0, 0, 52px);
 }
 
-/* Вариант ответа: приподнимается к человеку по наведению и прижимается
-   по нажатию. Обе связки — чистый transform. */
+/* Вариант ответа — скруглённая кнопка. Приподнимается к человеку
+   по наведению и прижимается по нажатию: обе связки — чистый transform. */
 .option3d {
   transform-style: preserve-3d;
   transform: translate3d(0, 0, var(--oz, 0px));
+  border-radius: 0.75rem;
+  /* В покое вариант тоже выглядит кнопкой, а не строкой текста:
+     своя подложка и контур. Иначе непонятно, куда нажимать. */
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
   transition:
     transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.2s linear;
+    border-color 0.16s linear,
+    color 0.16s linear;
   will-change: transform;
+}
+
+.option3d[data-selected='1'] {
+  border-color: var(--ink);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -319,27 +333,30 @@ textarea {
   --oz: 18px;
 }
 
-/* Заливка выбранного и наводимого варианта. Масштабируется по X,
-   а не меняет ширину: ширина пересчитывает раскладку, масштаб — нет. */
+/* Заливка появляется СРАЗУ и целиком. Плавно наползающая подсветка
+   на кнопке выбора читается как задержка интерфейса, а не как отклик. */
 .option3d__fill {
   position: absolute;
   inset: 0;
-  transform-origin: left center;
-  transform: scaleX(0);
-  background: var(--gold-soft);
-  border-radius: 0.6rem;
-  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  border-radius: inherit;
+  background: var(--hover-fill);
+  opacity: 0;
   pointer-events: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .option3d:hover .option3d__fill {
-    transform: scaleX(1);
+    opacity: 1;
   }
 }
 
+.option3d:active .option3d__fill {
+  opacity: 1;
+}
+
 .option3d[data-selected='1'] .option3d__fill {
-  transform: scaleX(1);
+  opacity: 1;
+  background: var(--selected-fill);
 }
 
 /* Тень под карточкой нарисована один раз и только гасится прозрачностью:
@@ -388,10 +405,113 @@ textarea {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Кнопки                                                              */
+/*                                                                     */
+/* Подсветка по контуру нарисована один раз статичной тенью на псевдо- */
+/* элементе, а движутся только opacity и transform. Анимировать сам    */
+/* box-shadow значит пересчитывать размытие в каждом кадре.            */
+/* ------------------------------------------------------------------ */
+
+.btn {
+  position: relative;
+  isolation: isolate;
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 1px var(--ink),
+    0 10px 34px -8px rgba(20, 19, 15, 0.55),
+    0 2px 10px -2px rgba(20, 19, 15, 0.35);
+  opacity: 0;
+  transform: scale(0.97);
+  transition:
+    opacity 0.26s ease,
+    transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+  z-index: -1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover {
+    transform: translate3d(0, -2px, 0);
+  }
+  .btn:hover::before {
+    opacity: 1;
+    transform: scale(1.045);
+  }
+}
+
+.btn:active {
+  transform: translate3d(0, 0, 0) scale(0.985);
+  transition-duration: 0.09s;
+}
+
+.btn:active::before {
+  opacity: 1;
+  transform: scale(1.01);
+  transition-duration: 0.09s;
+}
+
+.btn:focus-visible::before {
+  opacity: 1;
+  transform: scale(1.045);
+}
+
+.btn:disabled {
+  transform: none;
+}
+
+.btn:disabled::before {
+  opacity: 0;
+}
+
+/* Светлая кнопка на чернильном фоне: контур и ореол светлые,
+   иначе чёрная подсветка на чёрном не видна. */
+.btn--on-ink::before {
+  box-shadow:
+    0 0 0 1px var(--on-ink),
+    0 10px 34px -8px rgba(243, 240, 234, 0.4),
+    0 2px 10px -2px rgba(243, 240, 234, 0.28);
+}
+
 /* Инверсия для экрана результата */
 .inverted {
   background: var(--ink);
   color: var(--on-ink);
+}
+
+.inverted {
+  --hover-fill: rgba(243, 240, 234, 0.1);
+  --selected-fill: rgba(243, 240, 234, 0.16);
+}
+
+/* Небольшая кнопка-переключатель: без объёма, но с отчётливым откликом
+   на нажатие. Заливка и контур задаются на месте использования. */
+.press {
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.14s linear,
+    border-color 0.14s linear,
+    color 0.14s linear;
+  will-change: transform;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .press:hover {
+    transform: translate3d(0, -1px, 0);
+  }
+}
+
+.press:active {
+  transform: scale(0.97);
+  transition-duration: 0.08s;
 }
 
 .inverted ::selection {
@@ -442,5 +562,12 @@ textarea {
   .card3d__plate,
   .card3d__shadow {
     display: none !important;
+  }
+
+  /* Кнопки остаются отзывчивыми, но без движения: подсветка просто
+     появляется, ничего не едет и не масштабируется. */
+  .btn,
+  .btn::before {
+    transform: none !important;
   }
 }

@@ -27,13 +27,81 @@ test('все 64 комбинации дают положительный диа�
   }
 });
 
-test('ответ про бюджет не влияет на расчёт', () => {
+test('бюджет никогда не поднимает цену', () => {
+  // Платить больше за ту же работу только потому, что человек может, — нельзя.
   for (const c of all()) {
     const base = price(c.task, c.pages, c.priority, 'discuss');
     for (const budget of BUDGETS) {
       const other = price(c.task, c.pages, c.priority, budget);
-      assert.equal(other.low, base.low, `бюджет ${budget} сдвинул низ для ${JSON.stringify(c)}`);
-      assert.equal(other.high, base.high, `бюджет ${budget} сдвинул верх для ${JSON.stringify(c)}`);
+      assert.ok(
+        other.low <= base.low,
+        `бюджет ${budget} поднял низ для ${JSON.stringify(c)}: ${base.low} → ${other.low}`,
+      );
+      assert.ok(
+        other.high <= base.high,
+        `бюджет ${budget} поднял верх для ${JSON.stringify(c)}: ${base.high} → ${other.high}`,
+      );
+    }
+  }
+});
+
+test('щедрый бюджет ничего не меняет', () => {
+  // «Больше 300 000» и «обсуждается» ограничением не являются.
+  for (const c of all()) {
+    const base = price(c.task, c.pages, c.priority, 'discuss');
+    for (const budget of ['gt300', 'discuss']) {
+      const other = price(c.task, c.pages, c.priority, budget);
+      assert.equal(other.low, base.low, `${budget} сдвинул низ для ${JSON.stringify(c)}`);
+      assert.equal(other.high, base.high, `${budget} сдвинул верх для ${JSON.stringify(c)}`);
+    }
+  }
+});
+
+test('бюджет ниже вилки подтягивает её вниз', () => {
+  // Хотя бы там, где ориентир студии оставляет место для движения.
+  let moved = 0;
+  for (const c of all()) {
+    const base = price(c.task, c.pages, c.priority, 'discuss');
+    const tight = price(c.task, c.pages, c.priority, 'lt50');
+    if (tight.high < base.high) moved += 1;
+  }
+  assert.ok(moved > 30, `бюджет сдвинул вилку только в ${moved} комбинациях из 64`);
+});
+
+test('бюджет не опускает низ ниже ориентира студии', () => {
+  const floors: Record<string, Record<string, number>> = {
+    new: { one: 100_000, upto5: 150_000, more5: 250_000, unknown: 150_000 },
+    shop: { one: 300_000, upto5: 300_000, more5: 300_000, unknown: 300_000 },
+    redesign: { one: 80_000, upto5: 80_000, more5: 80_000, unknown: 80_000 },
+    unsure: { one: 100_000, upto5: 150_000, more5: 250_000, unknown: 100_000 },
+  };
+  for (const c of all())
+    for (const budget of BUDGETS) {
+      const r = price(c.task, c.pages, c.priority, budget);
+      const floor = floors[c.task][c.pages];
+      assert.ok(
+        r.low >= floor,
+        `${JSON.stringify(c)} + бюджет ${budget}: низ ${r.low} ниже ориентира ${floor}`,
+      );
+    }
+});
+
+test('вилка сближается с бюджетом, а не подстраивается под него', () => {
+  // Движение навстречу есть, но цифра не становится равной названной сумме.
+  const base = price('shop', 'upto5', 'features', 'discuss');
+  const tight = price('shop', 'upto5', 'features', 'lt50');
+  assert.ok(tight.high < base.high, 'верх не сдвинулся навстречу бюджету');
+  assert.ok(tight.low > 50_000, 'низ опустился до названной суммы — это подстройка, а не оценка');
+});
+
+test('когда вилка всё равно выше бюджета — об этом сказано', () => {
+  for (const c of all()) {
+    const r = price(c.task, c.pages, c.priority, 'lt50');
+    if (r.low > 50_000 * 1.15) {
+      assert.ok(
+        r.caveat && r.caveat.includes('50 000'),
+        `${JSON.stringify(c)}: вилка от ${r.low} при бюджете до 50 000, а оговорки нет`,
+      );
     }
   }
 });

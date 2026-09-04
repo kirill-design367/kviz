@@ -20,7 +20,7 @@ export default function NotFound() {
         <div className="mt-9">
           <Link
             href="/"
-            className="inline-flex items-center gap-3 rounded-full bg-ink px-8 py-[1.05rem] text-[1rem] font-medium text-on-ink transition-transform duration-300 ease-aurea hover:-translate-y-0.5"
+            className="btn inline-flex items-center gap-3 rounded-full bg-ink px-8 py-[1.05rem] text-[1rem] font-medium text-on-ink"
           >
             На первый экран
             <span aria-hidden>→</span>

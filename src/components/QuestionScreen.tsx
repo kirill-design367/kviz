@@ -84,12 +84,12 @@ export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function Questio
               role="radiogroup"
               aria-labelledby={`${question.id}-title`}
               onKeyDown={onArrows}
-              className="layer-mid mt-6 md:mt-8"
+              className="layer-mid mt-6 space-y-1.5 md:mt-8 md:space-y-2"
             >
               {question.options.map((option, index) => {
                 const active = selected === option.id;
                 return (
-                  <li key={option.id} className="border-t border-line last:border-b">
+                  <li key={option.id}>
                     <button
                       type="button"
                       role="radio"
@@ -98,7 +98,7 @@ export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function Questio
                       data-selected={active ? '1' : '0'}
                       tabIndex={active || (!selected && index === 0) ? 0 : -1}
                       onClick={() => onSelect(option.id)}
-                      className={`option3d group relative flex w-full items-center gap-4 px-2 py-[1.05rem] text-left md:py-[1.15rem] ${
+                      className={`option3d group relative flex w-full items-center gap-4 px-4 py-[0.95rem] text-left md:py-[1.05rem] ${
                         active ? 'text-ink' : 'text-ink-soft hover:text-ink'
                       }`}
                     >
@@ -106,8 +106,8 @@ export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function Questio
 
                       <span
                         aria-hidden
-                        className={`figure relative w-6 shrink-0 text-[0.85rem] tabular-nums ${
-                          active ? 'text-gold' : 'text-ink-faint'
+                        className={`figure relative w-5 shrink-0 text-[0.85rem] tabular-nums ${
+                          active ? 'text-ink' : 'text-ink-faint'
                         }`}
                       >
                         {index + 1}
@@ -117,12 +117,20 @@ export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function Questio
                         {option.label}
                       </span>
 
+                      {/* Отметка выбранного: обводка контуром чернил,
+                          заполняется целиком, когда вариант выбран. */}
                       <span
                         aria-hidden
-                        className={`relative h-[7px] w-[7px] shrink-0 rounded-full transition-transform duration-300 ease-aurea ${
-                          active ? 'scale-100 bg-gold' : 'scale-0 bg-line'
+                        className={`relative grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full border transition-colors duration-150 ${
+                          active ? 'border-ink' : 'border-line'
                         }`}
-                      />
+                      >
+                        <span
+                          className={`h-[8px] w-[8px] rounded-full bg-ink transition-transform duration-200 ease-aurea ${
+                            active ? 'scale-100' : 'scale-0'
+                          }`}
+                        />
+                      </span>
                     </button>
                   </li>
                 );

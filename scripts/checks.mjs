@@ -29,7 +29,7 @@ const out = [];
   await page.waitForTimeout(600);
   for (let i = 0; i < 3; i++) {
     await page.locator('[role="dialog"] ul li button').nth(1).click();
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(780);
   }
   const before = await page.locator('[role="dialog"] h2').innerText();
   await page.reload({ waitUntil: 'networkidle' });
@@ -90,7 +90,7 @@ const out = [];
   await page.waitForTimeout(500);
   for (let i = 0; i < 7; i++) {
     await page.locator('[role="dialog"] ul li button').nth(0).click();
-    await page.waitForTimeout(550);
+    await page.waitForTimeout(780);
   }
   await page.waitForTimeout(700);
   await page.fill('#name', 'Кирилл');

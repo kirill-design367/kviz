@@ -28,7 +28,7 @@ for (const v of [
   });
   for (let i = 0; i < 6; i++) {
     await page.locator('[role="dialog"] ul li button').nth(1).click();
-    await page.waitForTimeout(560);
+    await page.waitForTimeout(780);
   }
   const frames = await page.evaluate(() => { window.__go = false; return window.__f.slice(2); });
   const sorted = [...frames].sort((a, z) => a - z);
