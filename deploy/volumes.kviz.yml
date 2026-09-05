@@ -1,0 +1,2 @@
+# Дописывается в конец раздела volumes: docker-compose.yml
+  kviz-data:
