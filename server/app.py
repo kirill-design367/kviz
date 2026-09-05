@@ -26,7 +26,9 @@ AUREA · приёмник заявок с квиз-лендинга.
 
 import http.client
 import http.server
+import ipaddress
 import json
+import mimetypes
 import logging
 import os
 import re
@@ -38,6 +40,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote, urlsplit
 
 # --------------------------------------------------------------------------- #
 # Конфигурация
@@ -46,18 +49,37 @@ from datetime import datetime, timedelta, timezone
 APP_NAME = "aurea-kviz"
 VERSION = "1.0.0"
 
-BOT_TOKEN = os.environ.get("AUREA_KVIZ_BOT_TOKEN", "").strip()
-CHAT_ID = os.environ.get("AUREA_KVIZ_CHAT_ID", "").strip()
-BIND = os.environ.get("AUREA_KVIZ_BIND", "127.0.0.1").strip()
-PORT = int(os.environ.get("AUREA_KVIZ_PORT", "8787"))
-DATA_DIR = os.environ.get("AUREA_KVIZ_DATA_DIR", "/var/lib/aurea-kviz")
+def env(*names, default=""):
+    """Первое непустое значение из перечисленных переменных окружения.
+
+    Токен и чат берутся из тех же переменных, что и у основного сайта
+    (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID): заявки идут в тот же чат,
+    и заводить второй набор ключей незачем. Имена AUREA_KVIZ_* остаются
+    как явное переопределение, если однажды понадобится отдельный бот.
+    """
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return default
+
+
+BOT_TOKEN = env("AUREA_KVIZ_BOT_TOKEN", "TELEGRAM_BOT_TOKEN")
+CHAT_ID = env("AUREA_KVIZ_CHAT_ID", "TELEGRAM_CHAT_ID")
+BIND = env("AUREA_KVIZ_BIND", default="127.0.0.1")
+PORT = int(env("AUREA_KVIZ_PORT", default="8787"))
+DATA_DIR = env("AUREA_KVIZ_DATA_DIR", default="/var/lib/aurea-kviz")
+# Каталог со статикой. Пусто — сервис работает только приёмником заявок,
+# как раньше; задан — он же отдаёт сам сайт, и весь квиз живёт в одном
+# контейнере: одна служба, один образ, один адрес для nginx.
+STATIC_DIR = env("AUREA_KVIZ_STATIC_DIR")
 ALLOWED_ORIGINS = [
     o.strip().rstrip("/")
-    for o in os.environ.get("AUREA_KVIZ_ALLOWED_ORIGINS", "*").split(",")
+    for o in env("AUREA_KVIZ_ALLOWED_ORIGINS", default="*").split(",")
     if o.strip()
 ]
-IP_FAMILY_PREF = os.environ.get("AUREA_KVIZ_IP_FAMILY", "auto").strip().lower()
-RATE_PER_HOUR = int(os.environ.get("AUREA_KVIZ_RATE_PER_HOUR", "8"))
+IP_FAMILY_PREF = env("AUREA_KVIZ_IP_FAMILY", default="auto").lower()
+RATE_PER_HOUR = int(env("AUREA_KVIZ_RATE_PER_HOUR", default="8"))
 
 TELEGRAM_HOST = "api.telegram.org"
 LEADS_LOG = os.path.join(DATA_DIR, "leads.jsonl")
@@ -66,12 +88,30 @@ SENT_DIR = os.path.join(DATA_DIR, "sent")
 MAX_BODY = 16 * 1024
 MSK = timezone(timedelta(hours=3))
 # Адреса, от которых принимаются заголовки X-Real-IP и X-Forwarded-For.
-# По умолчанию только локальная петля: сервис слушает 127.0.0.1 и стоит за nginx.
-TRUSTED_PROXIES = {
-    a.strip()
-    for a in os.environ.get("AUREA_KVIZ_TRUSTED_PROXIES", "127.0.0.1,::1").split(",")
-    if a.strip()
-}
+# По умолчанию только локальная петля. В Docker впереди стоит соседний
+# контейнер nginx с адресом из подсети сети compose, и его адрес меняется
+# при пересоздании — поэтому запись принимается и подсетью: 172.16.0.0/12.
+# Без этого весь трафик выглядел бы приходящим с одного адреса, и лимит
+# в восемь заявок в час стал бы общим на всех посетителей сразу.
+def _parse_proxies(raw):
+    nets = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            log.warning("Не понимаю адрес доверенного прокси: %s", item)
+    return nets
+
+
+def _trusted(peer):
+    try:
+        addr = ipaddress.ip_address(peer)
+    except ValueError:
+        return False
+    return any(addr in net for net in TRUSTED_PROXIES)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,6 +119,10 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 log = logging.getLogger(APP_NAME)
+
+TRUSTED_PROXIES = _parse_proxies(
+    env("AUREA_KVIZ_TRUSTED_PROXIES", default="127.0.0.1,::1")
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -209,7 +253,7 @@ class TelegramTransport:
     def send_message(self, text):
         """Возвращает (True, None) либо (False, 'причина')."""
         if not self._token or not CHAT_ID:
-            return False, "не заданы AUREA_KVIZ_BOT_TOKEN или AUREA_KVIZ_CHAT_ID"
+            return False, "не заданы TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID"
 
         payload = json.dumps(
             {
@@ -503,7 +547,7 @@ def format_money(value):
 def render_message(lead):
     received = datetime.fromisoformat(lead["received_at"]).astimezone(MSK)
     lines = [
-        "<b>Заявка с квиза</b>",
+        "<b>Заявка с квиза — cenasaita.ru</b>",
         "",
         "<b>%s</b>" % escape_html(lead["name"]),
         "%s · %s" % (escape_html(lead.get("contact") or "—"), escape_html(lead["channel_label"])),
@@ -663,7 +707,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         peer = self.client_address[0]
         # Заголовкам верим, только если запрос пришёл от локального nginx.
         # Иначе любой, кто достучится до порта напрямую, назовётся кем угодно.
-        if peer not in TRUSTED_PROXIES:
+        if not _trusted(peer):
             return peer
         real = (self.headers.get("X-Real-IP") or "").strip()
         if real:
@@ -705,6 +749,95 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    # --- статика ------------------------------------------------------------ #
+
+    def _static_path(self, url_path):
+        """Файл под STATIC_DIR или None.
+
+        Экспорт Next собран с trailingSlash, поэтому страница лежит
+        в «каталог/index.html». Выход за пределы каталога исключён
+        сравнением уже разрешённых путей: одной проверки на «..» мало —
+        её обходят через кодирование и символические ссылки.
+        """
+        if not STATIC_DIR:
+            return None
+        path = unquote(urlsplit(url_path).path)
+        if "\0" in path:
+            return None
+        root = os.path.realpath(STATIC_DIR)
+        target = os.path.realpath(os.path.join(root, path.lstrip("/")))
+        if target != root and not target.startswith(root + os.sep):
+            return None
+        if os.path.isdir(target):
+            target = os.path.join(target, "index.html")
+        return target if os.path.isfile(target) else None
+
+    def _static_headers(self, url_path, ctype, length, encoding=None):
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(length))
+        if encoding:
+            self.send_header("Content-Encoding", encoding)
+            self.send_header("Vary", "Accept-Encoding")
+        # Имена файлов сборки содержат хеш содержимого, шрифты неизменны —
+        # их можно держать в кеше сколько угодно. HTML обязан проверяться,
+        # иначе после выкладки человек увидит старую страницу.
+        if url_path.startswith("/_next/static/") or url_path.startswith("/fonts/"):
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        else:
+            self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Content-Type-Options", "nosniff")
+
+    def _serve_static(self, url_path, head_only=False):
+        """Отдаёт файл. Возвращает False, если отдавать нечего."""
+        target = self._static_path(url_path)
+        status = 200
+        if target is None:
+            fallback = os.path.join(os.path.realpath(STATIC_DIR), "404.html") if STATIC_DIR else ""
+            if not fallback or not os.path.isfile(fallback):
+                return False
+            target, status = fallback, 404
+
+        ctype, _ = mimetypes.guess_type(target)
+        ctype = ctype or "application/octet-stream"
+        if ctype.startswith("text/") or ctype in (
+            "application/javascript",
+            "application/json",
+            "image/svg+xml",
+        ):
+            ctype += "; charset=utf-8"
+
+        # Сжатые копии кладутся рядом на сборке образа: nginx впереди чужой,
+        # и полагаться на то, что он включит gzip проксированному ответу,
+        # нельзя. Отдаём готовое, ничего не пережимая в запросе.
+        encoding = None
+        packed = target + ".gz"
+        if "gzip" in self.headers.get("Accept-Encoding", "") and os.path.isfile(packed):
+            target, encoding = packed, "gzip"
+
+        try:
+            size = os.path.getsize(target)
+            self.send_response(status)
+            self._static_headers(url_path, ctype, size, encoding)
+            self.end_headers()
+            if head_only:
+                return True
+            with open(target, "rb") as fh:
+                while True:
+                    chunk = fh.read(64 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except OSError:
+            return False
+        return True
+
+    def do_HEAD(self):  # noqa: N802
+        if STATIC_DIR and not self.path.startswith("/api/") and self._serve_static(self.path, True):
+            return
+        self._send(404, {"ok": False, "error": "not_found"})
+
     def do_GET(self):  # noqa: N802
         if self.path.rstrip("/") in ("/api/health", "/health"):
             self._send(
@@ -718,6 +851,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "configured": bool(BOT_TOKEN and CHAT_ID),
                 },
             )
+            return
+        if STATIC_DIR and not self.path.startswith("/api/") and self._serve_static(self.path):
             return
         self._send(404, {"ok": False, "error": "not_found"})
 
@@ -789,7 +924,7 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
 def main():
     if not BOT_TOKEN or not CHAT_ID:
         log.warning(
-            "AUREA_KVIZ_BOT_TOKEN или AUREA_KVIZ_CHAT_ID не заданы. "
+            "Токен и чат не заданы (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID). "
             "Сервис поднимется и будет сохранять заявки, но отправлять их не сможет."
         )
 
@@ -805,7 +940,14 @@ def main():
     server.transport = transport
     server.outbox = outbox
     server.limiter = RateLimiter(RATE_PER_HOUR)
-    log.info("%s %s слушает %s:%s", APP_NAME, VERSION, BIND, PORT)
+    log.info(
+        "%s %s слушает %s:%s, статика: %s",
+        APP_NAME,
+        VERSION,
+        BIND,
+        PORT,
+        STATIC_DIR or "не отдаётся",
+    )
 
     def warm_up():
         transport.probe()

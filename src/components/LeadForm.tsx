@@ -9,7 +9,13 @@ import { readSource } from '@/lib/storage';
 import { readableAnswers, type Answers } from '@/lib/quiz';
 import type { PriceRange } from '@/lib/pricing';
 
-const ENDPOINT = process.env.NEXT_PUBLIC_LEAD_ENDPOINT ?? '';
+/**
+ * Приёмник заявок. По умолчанию — свой же адрес: сайт и приёмник живут
+ * в одном контейнере и отвечают на одном домене, поэтому ни полного адреса,
+ * ни CORS не нужно. Переменная остаётся для разработки и для случая,
+ * когда приёмник вынесут на отдельный хост.
+ */
+const ENDPOINT = process.env.NEXT_PUBLIC_LEAD_ENDPOINT || '/api/lead';
 
 type Channel = 'telegram' | 'call';
 type Status = 'idle' | 'sending' | 'sent' | 'failed';

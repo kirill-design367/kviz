@@ -1,0 +1,15 @@
+# В образ едет только то, из чего собирается сайт.
+.git
+.github
+node_modules
+out
+.next
+.test-build
+docs
+scripts
+tests
+server/install.sh
+server/install.template.sh
+server/survey.sh
+server/aurea-kviz.service
+*.log
