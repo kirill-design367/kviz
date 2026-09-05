@@ -950,8 +950,19 @@ def main():
     )
 
     def warm_up():
-        transport.probe()
-        outbox.poke()
+        # Проба может не пройти на старте по случайности: контейнер поднялся
+        # раньше, чем догрелась сеть, или адрес Telegram ответил не сразу.
+        # Одного отказа мало, чтобы считать путь закрытым, поэтому пробуем
+        # ещё несколько раз с растущей паузой. На доставку это не влияет —
+        # send_message всё равно перебирает оба семейства, — но иначе
+        # health до перезапуска показывал бы «неизвестно», хотя всё работает.
+        for pause in (0, 30, 120, 600):
+            if pause:
+                time.sleep(pause)
+            transport.probe()
+            outbox.poke()
+            if transport.working_path != "неизвестно":
+                return
 
     outbox.start()
     threading.Thread(target=warm_up, name="probe", daemon=True).start()

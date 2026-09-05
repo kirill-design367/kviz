@@ -80,6 +80,7 @@ echo "  правим: $CONF"
 echo "  блоков server: $(grep -c '^server[[:space:]]*{' "$CONF")"
 echo "  упоминаний aureadesign: $(grep -c aureadesign "$CONF")"
 echo "  упоминаний cenasaita:   $(grep -c cenasaita "$CONF")"
+echo "  блоков квиза сейчас:    $(grep -c '^[[:space:]]*server_name[[:space:]].*cenasaita' "$CONF")"
 
 STAMP=$(date +%Y%m%d-%H%M%S)
 BACKUP="$CONF.before-kviz-$STAMP"
@@ -87,12 +88,54 @@ cp -a "$CONF" "$BACKUP" || die "не смог сделать копию"
 say "Копия"
 echo "  $BACKUP"
 
-# --- собираем новое содержимое --------------------------------------------- #
+# --- вырезание всего, что относится к квизу --------------------------------- #
+#
+# Убирается два вида следов:
+#   1. область между маркерами AUREA-KVIZ — так блок кладётся сейчас;
+#   2. любой блок server верхнего уровня, где упоминается cenasaita, вместе
+#      с прилипшими к нему сверху комментариями. Это нужно для блока от первой
+#      попытки: маркеров тогда ещё не было, и он остался в файле вторым
+#      экземпляром — nginx ругался «conflicting server name ... ignored».
+#
+# Чужие блоки не трогаются: условие удаления — упоминание домена квиза.
+# Скобки считаются, поэтому вложенные location и if внутри чужих блоков
+# не сбивают разбор.
 strip_block() {
-  awk -v b="$BEGIN" -v e="$END" '
-    index($0, b) == 1 { skip = 1 }
-    skip != 1 { print }
-    index($0, e) == 1 { skip = 0 }
+  awk '
+    BEGIN { depth = 0; inmark = 0; inserver = 0; np = 0; nb = 0 }
+    { line = $0 }
+
+    inmark == 1 {
+      if (index(line, "# <<< AUREA-KVIZ") == 1) inmark = 0
+      next
+    }
+    index(line, "# >>> AUREA-KVIZ") == 1 { inmark = 1; np = 0; next }
+
+    inserver == 1 {
+      buf[nb++] = line
+      depth += gsub(/\{/, "{", line)
+      depth -= gsub(/\}/, "}", line)
+      if (depth <= 0) {
+        body = ""
+        for (i = 0; i < nb; i++) body = body buf[i] "\n"
+        if (body !~ /cenasaita/) {
+          for (i = 0; i < np; i++) print pend[i]
+          printf "%s", body
+        }
+        np = 0; nb = 0; inserver = 0; depth = 0
+      }
+      next
+    }
+
+    depth == 0 && line ~ /^[[:space:]]*server[[:space:]]*\{/ {
+      inserver = 1; nb = 0; buf[nb++] = line; depth = 1; next
+    }
+
+    line ~ /^[[:space:]]*#/ || line ~ /^[[:space:]]*$/ { pend[np++] = line; next }
+
+    { for (i = 0; i < np; i++) print pend[i]; np = 0; print line }
+
+    END { for (i = 0; i < np; i++) print pend[i] }
   ' "$1"
 }
 
@@ -115,6 +158,9 @@ fi
 
 # --- доказательство, что чужое не задето ------------------------------------ #
 say "Проверка: чужие строки не тронуты"
+# Сравнивается всё, КРОМЕ блоков квиза, в старом файле и в новом. Совпало —
+# значит ни одна чужая строка не изменилась. Не совпало — выходим, ничего
+# не применив: расхождение вне нашего блока означает, что задето чужое.
 # Хвостовые пустые строки не считаем расхождением: блок отделяется
 # от чужого текста пустой строкой, и без этого первое же применение
 # выглядело бы как правка чужого файла.
@@ -190,6 +236,7 @@ if [ "$MODE" = https ]; then
 fi
 
 say "Готово"
+echo "  блоков квиза в файле: $(grep -c '^[[:space:]]*server_name[[:space:]].*cenasaita' "$CONF") (ожидается $([ "$MODE" = remove ] && echo 0 || { [ "$MODE" = https ] && echo 3 || echo 1; }))"
 echo "  режим: $MODE"
 echo "  копия: $BACKUP"
 echo "  откат вручную: cat $BACKUP > $CONF && docker exec $NGINX_CT nginx -s reload"
