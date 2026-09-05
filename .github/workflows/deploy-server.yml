@@ -81,6 +81,7 @@ jobs:
         env:
           KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
           if [ -z "$KEY" ]; then
             echo "Секрета DEPLOY_SSH_KEY нет — выкладка пропущена, образ опубликован."
@@ -90,8 +91,34 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "$HOST_KEY" > ~/.ssh/known_hosts
+
+          # Ключ хоста может лежать в секрете в двух видах: полной строкой
+          # known_hosts («хост тип ключ») или одним ключом («ssh-ed25519 AAAA…»),
+          # как его показывает ssh-keyscan без первого поля. Во втором случае
+          # имя хоста надо дописать самим: без него ssh не находит запись
+          # и падает с «Host key verification failed» — ровно это и случилось
+          # со всеми прошлыми выкладками, поэтому образ собирался, а на сервер
+          # не уезжал.
+          : > ~/.ssh/known_hosts
+          printf '%s\n' "$HOST_KEY" | while IFS= read -r ln; do
+            [ -n "$ln" ] || continue
+            case "$ln" in
+              ssh-*|ecdsa-*|sk-*) printf '%s %s\n' "$HOST" "$ln" ;;
+              *) printf '%s\n' "$ln" ;;
+            esac
+          done >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
+
+          lines=$(grep -c . ~/.ssh/known_hosts || true)
+          fields=$(awk 'NF>=3{n++} END{print n+0}' ~/.ssh/known_hosts)
+          echo "known_hosts: строк $lines, из них пригодных $fields"
+          if [ "$fields" = "0" ]; then
+            echo "В секрете DEPLOY_HOST_KEY нет ни одной пригодной строки."
+            echo "Нужна строка вида «ssh-ed25519 AAAA…» или «хост ssh-ed25519 AAAA…»,"
+            echo "как её печатает ssh-keyscan -t ed25519 <адрес сервера>."
+            echo "ready=no" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
           echo "ready=yes" >> "$GITHUB_OUTPUT"
 
       - name: Выкладка на сервер
@@ -102,7 +129,7 @@ jobs:
           TAG: ${{ needs.build.outputs.tag }}
           IMAGE: ${{ env.IMAGE_NAME }}
         run: |
-          ssh -o BatchMode=yes "$USER@$HOST" \
+          ssh -o BatchMode=yes -o ConnectTimeout=20 "$USER@$HOST" \
             "IMAGE='$IMAGE' TAG='$TAG' bash -s" <<'REMOTE'
           set -euo pipefail
           cd /opt/aurea/studio
