@@ -38,16 +38,18 @@ export function Progress({ current, total, reducedMotion }: Props) {
 
   return (
     <div className="select-none">
-      <div className="mb-3 flex items-baseline justify-between">
-        <span className="text-[0.8rem] uppercase tracking-[0.16em] text-ink-faint">
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-[0.82rem] uppercase tracking-[0.16em] text-ink-soft">
           Вопрос {Math.min(current + 1, total)} из {total}
         </span>
         <span className="figure text-[0.95rem] text-ink-faint" aria-hidden>
           {String(Math.min(current + 1, total)).padStart(2, '0')} / {String(total).padStart(2, '0')}
         </span>
       </div>
+      {/* Полоса заметная: 6 px и скруглённая. Тонкая линия в 2 px на экране
+          с крупной карточкой просто не читалась как индикатор. */}
       <div
-        className="h-[2px] w-full bg-line-soft"
+        className="h-[6px] w-full rounded-full bg-line-soft"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={total}
@@ -56,7 +58,7 @@ export function Progress({ current, total, reducedMotion }: Props) {
       >
         <div
           ref={fill}
-          className="h-[2px] w-full origin-left bg-ink will-change-transform"
+          className="h-full w-full origin-left rounded-full bg-ink will-change-transform"
           style={{ transform: `scaleX(${ratio})` }}
         />
       </div>

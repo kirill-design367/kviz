@@ -26,7 +26,7 @@ export function Hero({ onStart }: Props) {
             style={delay(1)}
             className="heading-anticva reveal text-[2rem] leading-[1.02] xs:text-[2.4rem] sm:text-[3.2rem] lg:text-[3.8rem] xl:text-[4.4rem]"
           >
-            Стоимость сайта под вашу задачу — за минуту
+            Узнайте стоимость вашего сайта за минуту
           </h1>
 
           <p
@@ -41,14 +41,18 @@ export function Hero({ onStart }: Props) {
             <button
               type="button"
               onClick={onStart}
-              className="btn group inline-flex w-full items-center justify-center gap-3 rounded-full bg-ink px-8 py-[1.15rem] text-[1.05rem] font-medium text-on-ink sm:w-auto sm:px-12 sm:py-[1.25rem] sm:text-[1.1rem]"
+              className="btn3d group w-full sm:w-auto"
             >
-              Рассчитать стоимость
-              <span
-                aria-hidden
-                className="transition-transform duration-300 ease-aurea group-hover:translate-x-1"
-              >
-                →
+              <span aria-hidden className="btn3d__shadow" />
+              <span aria-hidden className="btn3d__edge" />
+              <span className="btn3d__face px-8 py-[1.15rem] text-[1.05rem] font-medium sm:px-12 sm:py-[1.3rem] sm:text-[1.12rem]">
+                Рассчитать стоимость
+                <span
+                  aria-hidden
+                  className="transition-transform duration-300 ease-aurea group-hover:translate-x-1"
+                >
+                  →
+                </span>
               </span>
             </button>
           </div>

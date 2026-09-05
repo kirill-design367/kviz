@@ -22,7 +22,7 @@ type Props = {
  * Всё движение — transform и opacity, ничего пересчитывающего раскладку.
  *
  * Ради прохождения объём нигде не мешает: варианты остаются обычными
- * кнопками с ролью radio, тапаемая зона не меньше 56 px, наклон отключён
+ * кнопками с ролью radio, тапаемая зона не меньше 44 px, наклон отключён
  * на сенсорных экранах и при prefers-reduced-motion.
  */
 export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function QuestionScreen(
@@ -64,19 +64,19 @@ export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function Questio
           <span aria-hidden className="card3d__shadow" />
 
           <div className="relative">
-            <p className="figure layer-back mb-4 text-[0.95rem] text-ink-faint md:mb-5">
+            <p className="figure layer-back mb-2.5 text-[0.9rem] text-ink-faint md:mb-4 md:text-[0.95rem]">
               {String(question.order).padStart(2, '0')}
             </p>
 
             <h2
               id={`${question.id}-title`}
-              className="layer-front max-w-[22ch] text-[1.65rem] font-medium leading-[1.14] tracking-[-0.015em] xs:text-[1.9rem] sm:text-[2.3rem] md:text-[2.9rem]"
+              className="layer-front max-w-[22ch] text-[1.45rem] font-medium leading-[1.12] tracking-[-0.015em] xs:text-[1.65rem] sm:text-[2.1rem] md:text-[2.7rem]"
             >
               {question.title}
             </h2>
 
             {question.caption ? (
-              <p className="layer-mid mt-3 max-w-column text-[0.9rem] leading-relaxed text-ink-faint md:text-[0.95rem]">
+              <p className="layer-mid mt-2 max-w-column text-[0.88rem] leading-snug text-ink-faint md:mt-3 md:text-[0.95rem]">
                 {question.caption}
               </p>
             ) : null}
@@ -86,7 +86,7 @@ export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function Questio
               role="radiogroup"
               aria-labelledby={`${question.id}-title`}
               onKeyDown={onArrows}
-              className="layer-mid mt-6 space-y-1.5 md:mt-8 md:space-y-2"
+              className="layer-mid mt-4 space-y-1.5 md:mt-7 md:space-y-2"
             >
               {question.options.map((option, index) => {
                 const active = selected === option.id;
@@ -100,7 +100,7 @@ export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function Questio
                       data-selected={active ? '1' : '0'}
                       tabIndex={active || (!selected && index === 0) ? 0 : -1}
                       onClick={() => onSelect(option.id)}
-                      className={`option3d group relative flex w-full items-center gap-3 px-3.5 py-[0.95rem] text-left md:gap-4 md:px-4 md:py-[1.05rem] ${
+                      className={`option3d group relative flex w-full items-center gap-3 px-3.5 py-[0.8rem] text-left md:gap-4 md:px-4 md:py-[1.05rem] ${
                         active ? 'text-ink' : 'text-ink-soft hover:text-ink'
                       }`}
                     >
@@ -115,7 +115,7 @@ export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function Questio
                         {index + 1}
                       </span>
 
-                      <span className="relative flex-1 text-[1rem] leading-[1.3] xs:text-[1.05rem] md:text-[1.15rem]">
+                      <span className="relative flex-1 text-[0.98rem] leading-[1.28] xs:text-[1.03rem] md:text-[1.15rem]">
                         {option.label}
                       </span>
 

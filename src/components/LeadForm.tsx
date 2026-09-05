@@ -96,12 +96,8 @@ export function LeadForm({ answers, price, onSent }: Props) {
   const sending = status === 'sending';
 
   return (
-    <form onSubmit={submit} noValidate className="max-w-column">
-      <h2 className="text-[1.08rem] font-medium leading-snug tracking-[-0.01em] sm:text-[1.35rem]">
-        Точный расчёт и работы под вашу задачу
-      </h2>
-
-      <div className="mt-3.5 space-y-3">
+    <form onSubmit={submit} noValidate className="w-full">
+      <div className="space-y-3 lg:space-y-4">
         <Field
           id="name"
           label="Как вас зовут"
@@ -128,11 +124,11 @@ export function LeadForm({ answers, price, onSent }: Props) {
         />
 
         <fieldset>
-          <legend className="text-[0.88rem] leading-relaxed text-on-ink-soft">
-            Через семь минут наберу и назову точную стоимость. Если звонки
-            неудобны — напишу в Telegram, как вам лучше?
-          </legend>
-          <div className="mt-3 grid gap-2">
+          {/* Строка про звонок и Telegram стоит выше — над всей формой,
+              сразу под ценой. Здесь остаётся только подпись для
+              скринридера, иначе группа кнопок безымянная. */}
+          <legend className="sr-only">Как с вами связаться</legend>
+          <div className="grid gap-2">
             {CHANNELS.map((item) => {
               const active = channel === item.id;
               return (
@@ -142,7 +138,7 @@ export function LeadForm({ answers, price, onSent }: Props) {
                   disabled={sending}
                   aria-pressed={active}
                   onClick={() => setChannel(item.id)}
-                  className={`press relative flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-full border px-5 text-[1rem] font-medium ${
+                  className={`press relative flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-full border px-5 text-[1rem] font-medium lg:min-h-[58px] lg:text-[1.05rem] ${
                     active
                       ? 'border-on-ink bg-on-ink/15 text-on-ink'
                       : 'border-on-ink-soft/45 text-on-ink-soft hover:border-on-ink-soft hover:bg-on-ink/[0.07] hover:text-on-ink'
@@ -188,17 +184,12 @@ export function LeadForm({ answers, price, onSent }: Props) {
       <button
         type="submit"
         disabled={sending || status === 'sent'}
-        className="btn btn--on-ink mt-4 inline-flex w-full items-center justify-center rounded-full bg-on-ink px-8 py-[0.95rem] text-[1.02rem] font-medium text-ink disabled:cursor-not-allowed disabled:opacity-70"
+        className="btn btn--on-ink mt-4 inline-flex w-full items-center justify-center rounded-full bg-on-ink px-8 py-[0.95rem] text-[1.02rem] font-medium text-ink disabled:cursor-not-allowed disabled:opacity-70 lg:mt-5 lg:py-[1.1rem] lg:text-[1.08rem]"
       >
         {sending ? 'Отправляю…' : 'Отправить'}
       </button>
 
-      <p className="mt-3.5 text-[0.88rem] leading-relaxed text-on-ink-soft">
-        Дальше одно из двух: пришлю точный расчёт по вашей задаче или наберу,
-        и обсудим детали по телефону. Как вам удобнее — так и сделаю.
-      </p>
-
-      <p className="mt-2 text-[0.78rem] leading-snug text-on-ink-soft/85">
+      <p className="mt-2.5 text-[0.78rem] leading-snug text-on-ink-soft/85">
         Отправляя форму, вы соглашаетесь на{' '}
         <Link
           href="/privacy"
@@ -259,7 +250,7 @@ function Field({
         aria-invalid={Boolean(error)}
         aria-describedby={error ? `${id}-error` : undefined}
         onChange={(event) => onChange(event.target.value)}
-        className={`mt-1.5 w-full border-b bg-transparent pb-2.5 pt-1 text-[1.05rem] outline-none transition-colors duration-200 placeholder:text-on-ink-soft/60 disabled:opacity-60 ${
+        className={`mt-1.5 w-full border-b bg-transparent pb-2.5 pt-1 text-[1.05rem] outline-none lg:pb-3 lg:text-[1.12rem] transition-colors duration-200 placeholder:text-on-ink-soft/60 disabled:opacity-60 ${
           error ? 'border-gold-soft' : 'border-on-ink-soft/40 focus:border-on-ink'
         }`}
       />

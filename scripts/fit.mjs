@@ -21,18 +21,43 @@ for (const v of [
     return { family: cs.fontFamily.split(',')[0], size: cs.fontSize, transform: cs.textTransform };
   });
   const heroBox = await page.locator('h1').boundingBox();
+  const heroFit = await page.evaluate(() => ({
+    высотаОкна: window.innerHeight,
+    контент: document.documentElement.scrollHeight,
+  }));
 
   await page.getByRole('button', { name: /Рассчитать стоимость/ }).click();
   await page.waitForTimeout(700);
   const persp = await page.locator('.stage').first().evaluate((el) => getComputedStyle(el).perspective);
 
+  // Каждый вопрос обязан помещаться в экран целиком.
+  const вопросы = [];
   for (let i = 0; i < 7; i++) {
+    const шаг = await page.evaluate(() => {
+      const dlg = document.querySelector('[role="dialog"]');
+      const list = dlg.querySelector('ul[role="radiogroup"]');
+      if (!list) return null;
+      const last = list.querySelector('li:last-child button');
+      return {
+        вопрос: dlg.querySelector('h2')?.textContent?.trim(),
+        низПоследнегоВарианта: Math.round(last.getBoundingClientRect().bottom),
+        высотаОкна: window.innerHeight,
+        контент: dlg.scrollHeight,
+        видимо: dlg.clientHeight,
+        прокруткаНужна: dlg.scrollHeight > dlg.clientHeight + 2,
+        высотыВариантов: Array.from(list.querySelectorAll('button')).map((el) =>
+          Math.round(el.getBoundingClientRect().height),
+        ),
+      };
+    });
+    if (шаг) вопросы.push(шаг);
+    if (!(await page.locator('[role="dialog"] ul li button').count())) break;
     await page.locator('[role="dialog"] ul li button').nth(1).click();
     await page.waitForTimeout(780);
   }
   await page.waitForTimeout(900);
 
-  // Помещается ли вилка + форма в один кадр
+  // Вилка + форма в одном кадре
   const fit = await page.evaluate(() => {
     const dlg = document.querySelector('[role="dialog"]');
     const submit = Array.from(dlg.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Отправить');
@@ -42,6 +67,7 @@ for (const v of [
     return {
       высотаОкна: window.innerHeight,
       контентВысота: dlg.scrollHeight,
+      видимо: dlg.clientHeight,
       прокруткаНужна: dlg.scrollHeight > dlg.clientHeight + 2,
       низЦены: r(price),
       низПоляТелефона: r(phone),
@@ -49,7 +75,15 @@ for (const v of [
     };
   });
 
-  out.push({ вид: v.tag, шрифтЗаголовка: heroFont, высотаЗаголовка: Math.round(heroBox.height), перспектива: persp, вилкаИФорма: fit });
+  out.push({
+    вид: v.tag,
+    шрифтЗаголовка: heroFont,
+    высотаЗаголовка: Math.round(heroBox.height),
+    первыйЭкран: heroFit,
+    перспектива: persp,
+    вопросы,
+    вилкаИФорма: fit,
+  });
   await ctx.close();
 }
 console.log(JSON.stringify(out, null, 1));

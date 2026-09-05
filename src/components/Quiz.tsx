@@ -246,34 +246,41 @@ export function Quiz({ reducedMotion, onClose }: Props) {
       {/* Чернильный фон экрана с вилкой проявляется, а не включается щелчком. */}
       <span aria-hidden className="ink-veil" data-on={inverted ? '1' : '0'} />
 
-      <div className="shell relative z-10 flex min-h-full flex-col py-5 md:py-7">
+      <div className="shell relative z-10 flex min-h-full flex-col py-4 md:py-6">
         <header className="flex items-center justify-between">
           <Wordmark className={inverted ? 'text-on-ink' : ''} />
-          <button
-            type="button"
-            onClick={view === 'questions' ? onClose : view === 'success' ? onClose : back}
-            className={`-mr-2 rounded-full px-3 py-2 text-[0.9rem] transition-opacity duration-200 hover:opacity-70 ${
-              inverted ? 'text-on-ink-soft' : 'text-ink-faint'
-            }`}
-          >
-            {view === 'result' ? 'Назад' : view === 'success' ? 'Закрыть' : 'Выйти'}
-          </button>
+          {/* На экране вопроса выхода в шапке нет: единственный путь назад —
+              стрелка над карточкой, и она же уводит на первый экран. */}
+          {view === 'questions' ? null : (
+            <button
+              type="button"
+              onClick={view === 'success' ? onClose : back}
+              className={`-mr-2 rounded-full px-3 py-2 text-[0.9rem] transition-opacity duration-200 hover:opacity-70 ${
+                inverted ? 'text-on-ink-soft' : 'text-ink-faint'
+              }`}
+            >
+              {view === 'success' ? 'Закрыть' : 'Назад'}
+            </button>
+          )}
         </header>
 
+        {/* Прогресс стоит сразу под логотипом, а не над карточкой: выше
+            в кадре его видно с первого взгляда, и он не отъедает высоту
+            у самого вопроса. */}
         {view === 'questions' ? (
-          <div className="mt-7 md:mt-10">
+          <div className="mt-3 md:mt-4">
             <Progress current={step} total={total} reducedMotion={reducedMotion} />
           </div>
         ) : null}
 
         <main
           className={`flex flex-1 flex-col justify-center ${
-            view === 'result' ? 'py-3 md:py-8' : 'py-9 md:py-12'
+            view === 'result' ? 'py-3 md:py-6' : 'py-3 md:py-7'
           }`}
         >
           {/* Возврат стоит НАД карточкой и слева: подпись сверху, стрелка под ней. */}
           {view === 'questions' ? (
-            <div className="mb-6 flex flex-col items-start gap-2 md:mb-8">
+            <div className="mx-auto mb-3 flex w-full max-w-[38rem] flex-col items-start gap-1.5 md:mb-5 md:gap-2">
               <span id="back-hint" className="text-[0.8rem] text-ink-faint">
                 Можно вернуться и поменять ответ
               </span>
@@ -305,15 +312,19 @@ export function Quiz({ reducedMotion, onClose }: Props) {
             />
           ) : null}
 
-          {/* Вилка и форма в одном кадре: человек видит цифру и тут же поля,
-              листать за формой не нужно. На широком экране — две колонки,
-              на телефоне — плотная колонка, которая помещается в экран. */}
+          {/* Вилка и форма в одном кадре и в одной колонке, сверху вниз:
+              цифра — что будет дальше — поля. Двух колонок больше нет:
+              взгляд не должен прыгать через экран между цифрой и полем. */}
           {view === 'result' ? (
-            <div className="mx-auto grid w-full max-w-[62rem] items-center gap-6 lg:grid-cols-2 lg:gap-16">
-              <div>
-                <PriceResult price={price} reducedMotion={reducedMotion} />
-              </div>
-              <div>
+            <div className="mx-auto w-full max-w-[33rem] lg:max-w-[38rem]">
+              <PriceResult price={price} reducedMotion={reducedMotion} />
+
+              <p className="mt-3 text-[0.9rem] leading-relaxed text-on-ink-soft md:mt-4 lg:text-[1rem]">
+                Через семь минут наберу и назову точную стоимость. Если звонки
+                неудобны — напишу в Telegram, как вам лучше?
+              </p>
+
+              <div className="mt-4 md:mt-5 lg:mt-6">
                 <LeadForm
                   answers={answers}
                   price={price}
@@ -328,8 +339,6 @@ export function Quiz({ reducedMotion, onClose }: Props) {
 
           {view === 'success' ? <Success channel={channel} reducedMotion={reducedMotion} /> : null}
         </main>
-
-        <footer className="pb-2" />
       </div>
     </div>
   );

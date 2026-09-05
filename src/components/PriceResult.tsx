@@ -47,14 +47,14 @@ export function PriceResult({ price, reducedMotion }: Props) {
     <div ref={root}>
       <p
         data-appear
-        className="text-[0.78rem] uppercase tracking-[0.16em] text-on-ink-soft"
+        className="text-[0.78rem] uppercase tracking-[0.16em] text-on-ink-soft lg:text-[0.85rem]"
       >
         Ориентировочная стоимость
       </p>
 
       <p
         data-appear
-        className="figure mt-2.5 text-[1.95rem] leading-[1.04] tracking-[-0.015em] xs:text-[2.3rem] sm:text-[3.2rem] lg:text-[3rem] xl:text-[3.5rem]"
+        className="figure mt-2 text-[1.85rem] leading-[1.04] tracking-[-0.015em] xs:text-[2.15rem] sm:text-[2.6rem] lg:mt-3 lg:text-[3.4rem] xl:text-[3.8rem]"
       >
         <span className="whitespace-nowrap">{formatMoney(price.low)}</span>
         <span aria-hidden className="mx-2 text-on-ink-soft lg:mx-3">
@@ -68,7 +68,7 @@ export function PriceResult({ price, reducedMotion }: Props) {
       {price.caveat ? (
         <p
           data-appear
-          className="mt-3 max-w-[34rem] border-l-2 border-gold-soft/60 pl-3 text-[0.85rem] leading-snug text-on-ink-soft"
+          className="mt-2.5 border-l-2 border-gold-soft/60 pl-3 text-[0.83rem] leading-snug text-on-ink-soft"
         >
           {price.caveat}
         </p>

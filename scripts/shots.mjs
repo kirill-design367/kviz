@@ -25,13 +25,6 @@ async function run(browser, view) {
   await page.waitForTimeout(1100);
   await page.screenshot({ path: `${OUT}/01-первый-экран-${view.tag}.png` });
 
-  // Ниже первого экрана
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.waitForTimeout(700);
-  await page.screenshot({ path: `${OUT}/02-как-устроено-${view.tag}.png` });
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(400);
-
   // Квиз
   await page.getByRole('button', { name: /Рассчитать стоимость/ }).click();
   await page.waitForTimeout(800);
@@ -91,20 +84,23 @@ async function run(browser, view) {
   await page.waitForTimeout(900);
   await page.screenshot({ path: `${OUT}/08-вилка-неопределённая-${view.tag}.png` });
 
-  // Дорогая задача при маленьком бюджете: видно, что вилка подтянулась
-  // и что расхождение названо словами
+  // Дешёвая задача при большом бюджете: видно, что вилка поднялась
+  // к названной сумме, а не осталась внизу
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('button', { name: /Рассчитать стоимость/ }).click();
   await page.waitForTimeout(600);
-  const TIGHT = [1, 1, 1, 2, 3, 3, 2]; // сайт с нуля, больше пяти, функциональность, бюджет 50–150 000
-  for (const pick of TIGHT) {
+  // лендинг с нуля, важна скорость, бюджет 150–300 000: расчёт даёт 50–70 тысяч,
+  // на экране должно быть 150 000—300 000
+  const RICH = [1, 1, 1, 2, 1, 3, 3];
+  for (const pick of RICH) {
     await page.locator('[role="dialog"] ul li button').nth(pick - 1).click();
     await page.waitForTimeout(780);
   }
   await page.waitForTimeout(900);
-  await page.screenshot({ path: `${OUT}/08b-вилка-малый-бюджет-${view.tag}.png` });
+  await page.screenshot({ path: `${OUT}/08b-вилка-бюджет-выше-расчёта-${view.tag}.png` });
+  const richPrice = await page.locator('.figure').first().innerText().catch(() => '');
 
   // 404
   await page.goto(`${BASE}/нет-такой-страницы`, { waitUntil: 'networkidle' }).catch(() => {});
@@ -112,7 +108,14 @@ async function run(browser, view) {
   await page.screenshot({ path: `${OUT}/09-404-${view.tag}.png` });
 
   await context.close();
-  return { view: view.tag, priceText: priceText.replace(/\s+/g, ' ').trim(), phoneError, success, errors };
+  return {
+    view: view.tag,
+    priceText: priceText.replace(/\s+/g, ' ').trim(),
+    'вилка при бюджете выше расчёта': richPrice.replace(/\s+/g, ' ').trim(),
+    phoneError,
+    success,
+    errors,
+  };
 }
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });

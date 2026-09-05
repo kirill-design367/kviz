@@ -229,13 +229,15 @@ textarea {
   background: var(--paper-raised);
   border: 1px solid var(--line-soft);
   border-radius: 1.1rem;
-  padding: 1.6rem 1.35rem 1.1rem;
+  /* Плотнее сверху и снизу: вопрос со всеми вариантами обязан помещаться
+     в один экран телефона, листать за вариантами нельзя. */
+  padding: 1.15rem 1.15rem 1rem;
 }
 
 @media (min-width: 768px) {
   .card3d {
     border-radius: 1.4rem;
-    padding: 2.6rem 2.4rem 2rem;
+    padding: 2.2rem 2.4rem 1.8rem;
   }
 }
 
@@ -449,6 +451,105 @@ textarea {
   opacity: 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* Объёмная кнопка                                                     */
+/*                                                                     */
+/* Толщина сделана вторым слоем под лицевой панелью, а не тенью.       */
+/* Лицо ездит по Y, торец стоит на месте — и глубина читается тем,     */
+/* сколько торца видно. Двигается только transform: ни одного          */
+/* пересчёта размытия в кадре.                                         */
+/* ------------------------------------------------------------------ */
+
+.btn3d {
+  position: relative;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  border-radius: 999px;
+  isolation: isolate;
+}
+
+/* Торец: то, на чём стоит лицевая панель. */
+.btn3d__edge {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  /* Торец — затенённая боковая стенка бруска: он ТЕМНЕЕ лицевой панели.
+     Раньше было наоборот, и блок читался как плоский прямоугольник
+     с подсветкой снизу, а не как объём. */
+  background: linear-gradient(180deg, #1b1913 0%, #080806 100%);
+  box-shadow: inset 0 -1px 0 rgba(243, 240, 234, 0.07);
+  transform: translate3d(0, 9px, 0);
+  z-index: -2;
+}
+
+/* Мягкая опора под кнопкой. Нарисована один раз, гасится прозрачностью. */
+.btn3d__shadow {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: -12px;
+  height: 30px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(20, 19, 15, 0.45), transparent 72%);
+  opacity: 0.6;
+  transition: opacity 0.24s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -3;
+}
+
+/* Лицевая панель. Светлая кромка сверху — блик, который делает её выпуклой. */
+.btn3d__face {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  border-radius: inherit;
+  /* Свет падает сверху: верх панели светлее низа. Блик по верхней кромке
+     и тонкая тень по нижней — то, по чему глаз читает толщину. */
+  background: linear-gradient(180deg, #3b362c 0%, #1d1a15 52%, #141310 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(243, 240, 234, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+  color: var(--on-ink);
+  transform: translate3d(0, 0, 0);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  /* Кнопка поднимается — торца становится видно больше. */
+  .btn3d:hover .btn3d__face {
+    transform: translate3d(0, -6px, 0);
+  }
+  .btn3d:hover .btn3d__shadow {
+    opacity: 0.9;
+    transform: translate3d(0, 5px, 0) scaleX(1.06);
+  }
+}
+
+/* Нажатие: панель садится на торец почти вплотную. */
+.btn3d:active .btn3d__face {
+  transform: translate3d(0, 7px, 0);
+  transition-duration: 0.07s;
+}
+
+.btn3d:active .btn3d__shadow {
+  opacity: 0.25;
+  transform: translate3d(0, -3px, 0) scaleX(0.94);
+  transition-duration: 0.07s;
+}
+
+.btn3d:focus-visible {
+  outline: none;
+}
+
+.btn3d:focus-visible .btn3d__face {
+  transform: translate3d(0, -6px, 0);
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+}
+
 /* Светлая кнопка на чернильном фоне: контур и ореол светлые,
    иначе чёрная подсветка на чёрном не видна. */
 .btn--on-ink::before {
@@ -616,6 +717,18 @@ textarea {
   .btn::before,
   .back-arrow,
   .press {
+    transform: none !important;
+  }
+
+  /* Объёмная кнопка остаётся объёмной, но перестаёт ездить:
+     торец виден, лицо не двигается. */
+  .btn3d__face,
+  .btn3d__shadow {
+    transition: none !important;
+  }
+
+  .btn3d:hover .btn3d__face,
+  .btn3d:active .btn3d__face {
     transform: none !important;
   }
 

@@ -1,0 +1,23 @@
+// Снимок кнопки в трёх состояниях: покой, наведение, нажатие.
+import { chromium } from 'playwright';
+import { mkdirSync } from 'node:fs';
+const BASE = process.env.SHOT_BASE ?? 'http://127.0.0.1:4302/kviz/';
+mkdirSync('docs/screens', { recursive: true });
+const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const p = await b.newPage({ viewport: { width: 900, height: 500 }, deviceScaleFactor: 2 });
+await p.goto(BASE, { waitUntil: 'networkidle' });
+await p.waitForTimeout(1000);
+const btn = p.locator('.btn3d');
+const box = await btn.boundingBox();
+const clip = { x: box.x - 40, y: box.y - 30, width: box.width + 80, height: box.height + 70 };
+await p.screenshot({ path: 'docs/screens/10-кнопка-покой.png', clip });
+await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+await p.waitForTimeout(450);
+await p.screenshot({ path: 'docs/screens/10-кнопка-наведение.png', clip });
+await p.mouse.down();
+await p.waitForTimeout(180);
+await p.screenshot({ path: 'docs/screens/10-кнопка-нажатие.png', clip });
+await p.mouse.up();
+const state = await p.locator('.btn3d__face').evaluate((el) => getComputedStyle(el).transform);
+console.log(JSON.stringify({ 'снимки': 3, 'transform лицевой панели после отпускания': state }));
+await b.close();
