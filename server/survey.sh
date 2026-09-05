@@ -80,12 +80,83 @@ line "SELinux / AppArmor"
 have getenforce && echo "  SELinux: $(getenforce 2>/dev/null)"
 have aa-status && echo "  AppArmor: $(aa-status --enabled >/dev/null 2>&1 && echo включён || echo выключен)"
 
+line "Панели управления хостингом"
+PANEL_FOUND=no
+for d in /usr/local/mgr5 /usr/local/fastpanel2 /usr/local/hestia /usr/local/vesta \
+         /usr/local/cpanel /opt/psa /www/server/panel /usr/local/ispmgr; do
+  [ -e "$d" ] && { echo "  НАЙДЕНА: $d"; PANEL_FOUND=yes; }
+done
+[ "$PANEL_FOUND" = no ] && echo "  панелей не видно — конфиги nginx правятся руками"
+
+line "Домен cenasaita.ru"
+for host in cenasaita.ru www.cenasaita.ru; do
+  echo "  $host:"
+  if have getent; then
+    getent ahostsv4 "$host" 2>/dev/null | awk '{print "    A    "$1}' | sort -u
+    getent ahostsv6 "$host" 2>/dev/null | awk '{print "    AAAA "$1}' | sort -u
+  fi
+done
+echo "  Объявлен ли домен в nginx:"
+if have nginx; then
+  nginx -T 2>/dev/null | grep -E '^[[:space:]]*server_name' | tr -s ' ' \
+    | sed 's/^ *server_name //; s/;$//' | tr ' ' '\n' \
+    | grep -Fx -e cenasaita.ru -e www.cenasaita.ru | sed 's/^/    занят: /' \
+    || echo "    свободен, ни в одном server_name не встречается"
+fi
+echo "  Каталог /var/www/cenasaita.ru: $([ -e /var/www/cenasaita.ru ] && echo СУЩЕСТВУЕТ || echo свободен)"
+
+line "Кто слушает 80 и 443"
+if have ss; then
+  ss -tlnpH 2>/dev/null | awk '$4 ~ /:(80|443)$/ {print "  "$0}' || true
+fi
+
+line "Соответствие server_name и root в nginx"
+# Нужно, чтобы новый сайт не сел на чужой каталог.
+if have nginx; then
+  nginx -T 2>/dev/null | awk '
+    /^[[:space:]]*server[[:space:]]*\{/ { inblock=1; name=""; root="" }
+    inblock && /^[[:space:]]*server_name/ { gsub(/;/,""); sub(/^[[:space:]]*server_name[[:space:]]*/,""); name=$0 }
+    inblock && /^[[:space:]]*root/ { gsub(/;/,""); sub(/^[[:space:]]*root[[:space:]]*/,""); root=$0 }
+    inblock && /^[[:space:]]*\}/ { if (name != "") printf "  %-40s %s\n", name, (root == "" ? "(без root)" : root); inblock=0 }
+  ' | sort -u
+fi
+
+line "Доступ по SSH (для ключа выкладки)"
+if [ -r /etc/ssh/sshd_config ]; then
+  grep -Ei '^[[:space:]]*(Port|PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|AllowUsers|AllowGroups|AuthorizedKeysFile)' \
+    /etc/ssh/sshd_config 2>/dev/null | sed 's/^/  /' || echo "  директивы по умолчанию"
+  for f in /etc/ssh/sshd_config.d/*.conf; do
+    [ -r "$f" ] && { echo "  $f:"; grep -Ev '^\s*(#|$)' "$f" | sed 's/^/    /'; }
+  done
+fi
+echo "  Пользователи с оболочкой (кандидаты и занятые имена):"
+awk -F: '$3 >= 1000 && $3 < 65534 {print "    "$1"  uid="$3"  "$7}' /etc/passwd 2>/dev/null
+id aureadeploy >/dev/null 2>&1 && echo "    пользователь aureadeploy СУЩЕСТВУЕТ" || echo "    пользователь aureadeploy свободен"
+
+line "Автопродление сертификатов"
+if have systemctl; then
+  systemctl list-timers --all --no-pager 2>/dev/null | grep -Ei 'certbot|acme|renew' | sed 's/^/  /' \
+    || echo "  таймеров certbot не видно"
+fi
+for f in /etc/cron.d/certbot /etc/cron.daily/certbot; do
+  [ -e "$f" ] && echo "  есть $f"
+done
+
 line "Что уже занято под aurea-kviz"
 for p in /opt/aurea-kviz /etc/aurea-kviz /var/lib/aurea-kviz; do
   [ -e "$p" ] && echo "  СУЩЕСТВУЕТ: $p" || echo "  свободно: $p"
 done
 id aureakviz >/dev/null 2>&1 && echo "  пользователь aureakviz СУЩЕСТВУЕТ" || echo "  пользователь aureakviz свободен"
 have ss && { ss -tlnpH 2>/dev/null | grep -q ':8787' && echo "  порт 8787 ЗАНЯТ" || echo "  порт 8787 свободен"; }
+
+line "Итог одной строкой"
+printf '  ОС=%s | nginx=%s | python3=%s | certbot=%s | rsync=%s | панель=%s\n' \
+  "${PRETTY_NAME:-?}" \
+  "$(have nginx && nginx -v 2>&1 | sed 's/.*\///' || echo нет)" \
+  "$(have python3 && python3 -V 2>&1 | awk '{print $2}' || echo нет)" \
+  "$(have certbot && echo есть || echo нет)" \
+  "$(have rsync && echo есть || echo нет)" \
+  "$PANEL_FOUND"
 
 echo
 echo "Осмотр закончен. Ничего не изменено."
