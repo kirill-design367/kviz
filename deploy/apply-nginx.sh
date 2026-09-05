@@ -24,7 +24,11 @@ set -uo pipefail
 MODE="${1:-}"
 STACK="${AUREA_STACK_DIR:-/opt/aurea/studio}"
 NGINX_CT="${AUREA_NGINX_CONTAINER:-aurea-nginx}"
-RAW="https://raw.githubusercontent.com/kirill-design367/kviz/claude/aurea-quiz-landing-1i0c4o/deploy"
+# Откуда брать блоки. По умолчанию — ветка, но у raw.githubusercontent
+# кеш на несколько минут, и сразу после правки оттуда может приехать
+# вчерашний файл. Поэтому команды даются с адресом, прибитым к коммиту:
+# AUREA_RAW=.../<sha>/deploy — такой адрес неизменен и не кешируется мимо.
+RAW="${AUREA_RAW:-https://raw.githubusercontent.com/kirill-design367/kviz/claude/aurea-quiz-landing-1i0c4o/deploy}"
 BEGIN='# >>> AUREA-KVIZ'
 END='# <<< AUREA-KVIZ'
 
