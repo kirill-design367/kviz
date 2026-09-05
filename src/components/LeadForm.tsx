@@ -7,7 +7,7 @@ import { looksLikeTelegram, telegramAsTyped } from '@/lib/telegram';
 import { GOALS, reachGoal } from '@/lib/metrika';
 import { readSource } from '@/lib/storage';
 import { readableAnswers, type Answers } from '@/lib/quiz';
-import type { PriceRange } from '@/lib/pricing';
+import type { PriceEstimate } from '@/lib/pricing';
 
 /**
  * Приёмник заявок. По умолчанию — свой же адрес: сайт и приёмник живут
@@ -22,7 +22,7 @@ type Status = 'idle' | 'sending' | 'sent' | 'failed';
 
 type Props = {
   answers: Answers;
-  price: PriceRange;
+  price: PriceEstimate;
   onSent: (channel: Channel) => void;
 };
 
@@ -81,7 +81,9 @@ export function LeadForm({ answers, price, onSent }: Props) {
         : { phone: phoneAsTyped(phone) }),
       company: honeypot.current?.value ?? '',
       answers: readableAnswers(answers),
-      price: { low: price.low, high: price.high },
+      // Вилки на экране не было — и в заявке её тоже нет. Отправлять число,
+      // которого человек не видел, значит обсуждать с ним разные суммы.
+      ...(price.kind === 'range' ? { price: { low: price.low, high: price.high } } : {}),
       source: readSource(),
     };
 

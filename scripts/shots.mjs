@@ -87,36 +87,40 @@ async function run(browser, view) {
   await page.screenshot({ path: `${OUT}/07-подтверждение-${view.tag}.png` });
   const success = await page.getByText('Спасибо, записал').isVisible().catch(() => false);
 
-  // Вилка при неопределённых ответах: должна появиться оговорка
+  // Бюджет без верхней границы: вилки нет, вместо неё строка
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('button', { name: /Рассчитать стоимость/ }).click();
   await page.waitForTimeout(600);
-  const VAGUE = [4, 4, 1, 4, 4, 4, 5]; // «пока не определился», «не знаю»
+  const VAGUE = [4, 4, 1, 4, 4, 4, 5]; // ... и «Обсуждается» в бюджете
   for (const pick of VAGUE) {
     await page.locator('[role="dialog"] ul li button').nth(pick - 1).click();
     await page.waitForTimeout(780);
   }
   await page.waitForTimeout(900);
-  await page.screenshot({ path: `${OUT}/08-вилка-неопределённая-${view.tag}.png` });
+  await page.screenshot({ path: `${OUT}/08-без-вилки-${view.tag}.png` });
+  const noRange = await page
+    .locator('[role="dialog"] p', { hasText: 'при обсуждении' })
+    .first()
+    .innerText()
+    .catch(() => '');
+  const noFigure = (await page.locator('.figure').count()) === 0;
 
-  // Дешёвая задача при большом бюджете: видно, что вилка поднялась
-  // к названной сумме, а не осталась внизу
+  // Названный бюджет: вилка считается только от него
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('button', { name: /Рассчитать стоимость/ }).click();
   await page.waitForTimeout(600);
-  // лендинг с нуля, важна скорость, бюджет 150–300 000: расчёт даёт 50–70 тысяч,
-  // на экране должно быть 150 000—300 000
+  // лендинг с нуля, важна скорость, бюджет 150–300 000 → 285 000—345 000
   const RICH = [1, 1, 1, 2, 1, 3, 3];
   for (const pick of RICH) {
     await page.locator('[role="dialog"] ul li button').nth(pick - 1).click();
     await page.waitForTimeout(780);
   }
   await page.waitForTimeout(900);
-  await page.screenshot({ path: `${OUT}/08b-вилка-бюджет-выше-расчёта-${view.tag}.png` });
+  await page.screenshot({ path: `${OUT}/08b-вилка-от-бюджета-${view.tag}.png` });
   const richPrice = await page.locator('.figure').first().innerText().catch(() => '');
 
   // 404
@@ -128,7 +132,9 @@ async function run(browser, view) {
   return {
     view: view.tag,
     priceText: priceText.replace(/\s+/g, ' ').trim(),
-    'вилка при бюджете выше расчёта': richPrice.replace(/\s+/g, ' ').trim(),
+    'вилка от названного бюджета': richPrice.replace(/\s+/g, ' ').trim(),
+    'строка вместо вилки': noRange.replace(/\s+/g, ' ').trim(),
+    'цифры на этом экране нет': noFigure,
     'поле для Telegram': telegramField,
     phoneError,
     success,

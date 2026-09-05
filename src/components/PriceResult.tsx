@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { formatMoney, type PriceRange } from '@/lib/pricing';
+import { formatMoney, type PriceEstimate } from '@/lib/pricing';
 
 type Props = {
-  price: PriceRange;
+  price: PriceEstimate;
   reducedMotion: boolean;
 };
 
@@ -43,6 +43,23 @@ export function PriceResult({ price, reducedMotion }: Props) {
     };
   }, [reducedMotion]);
 
+  if (price.kind === 'discuss') {
+    /* Числа нет и придумывать его не из чего. На месте вилки — одна строка,
+       набранная крупнее основного текста: блок должен весить в кадре столько
+       же, сколько весила бы цифра, иначе экран проваливается. */
+    return (
+      <div ref={root}>
+        {/* Надстрочной подписи здесь нет намеренно. Строка длиннее цифры
+            и занимает три строки на узком экране: с подписью экран перестаёт
+            помещаться на 360×640, а без неё сама фраза встаёт на место цифры
+            и читается как ответ на вопрос о стоимости. */}
+        <p data-appear className="text-[1.05rem] leading-[1.4] text-ink lg:text-[1.35rem]">
+          {price.note}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div ref={root}>
       <p
@@ -64,16 +81,6 @@ export function PriceResult({ price, reducedMotion }: Props) {
           {formatMoney(price.high)} <span className="text-ink-faint">₽</span>
         </span>
       </p>
-
-      {price.caveat ? (
-        <p
-          data-appear
-          className="mt-2.5 border-l-2 border-line pl-3 text-[0.83rem] leading-snug text-ink-faint"
-        >
-          {price.caveat}
-        </p>
-      ) : null}
-
     </div>
   );
 }

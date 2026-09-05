@@ -31,6 +31,7 @@ import json
 import mimetypes
 import logging
 import os
+import random
 import re
 import socket
 import socketserver
@@ -141,31 +142,60 @@ class FamilyHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, host, family, timeout, context):
         super().__init__(host, timeout=timeout, context=context)
         self._family = family
+        # Адрес, на котором всё получилось, — для лога и для /api/health.
+        self.used_address = None
 
     def connect(self):
-        last_error = None
+        """Перебирает ВСЕ адреса семейства, и на TCP, и на TLS.
+
+        Telegram отдаёт несколько адресов, и фильтрация в РФ работает не по
+        всему списку сразу: один адрес принимает соединение и обрывает его
+        на рукопожатии, соседний отвечает нормально. Раньше рукопожатие
+        стояло ЗА циклом: первый же адрес, оборвавший TLS, ронял всю попытку,
+        и остальные адреса не пробовались никогда. Теперь неудача на любой
+        из двух фаз — повод взять следующий адрес.
+
+        Порядок адресов перемешивается. Иначе каждая повторная попытка
+        начиналась бы с того же самого адреса, и если закрыт именно он,
+        очередь заявок стояла бы на одном и том же месте часами.
+        """
+        errors = []
         try:
             infos = socket.getaddrinfo(self.host, self.port, self._family, socket.SOCK_STREAM)
         except OSError as exc:
             raise OSError("не разрешается %s: %s" % (self.host, exc))
         if not infos:
             raise OSError("нет адресов для семейства %s" % self._family)
+        infos = list(infos)
+        random.shuffle(infos)
         for af, socktype, proto, _canon, sa in infos:
+            address = sa[0]
             try:
                 sock = socket.socket(af, socktype, proto)
             except OSError as exc:
-                last_error = exc
+                errors.append("%s: сокет не создался (%s)" % (address, exc))
                 continue
             try:
                 sock.settimeout(self.timeout)
                 sock.connect(sa)
             except OSError as exc:
-                last_error = exc
+                errors.append("%s: TCP не прошёл (%s)" % (address, exc))
                 sock.close()
                 continue
-            self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+            try:
+                self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+            except OSError as exc:
+                # Ровно тот случай, ради которого рукопожатие внутри цикла:
+                # TCP приняли, а TLS оборвали. Идём на следующий адрес.
+                errors.append("%s: TLS не прошёл (%s)" % (address, exc))
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+                continue
+            self.used_address = address
             return
-        raise last_error if last_error else OSError("не удалось подключиться")
+        raise OSError("; ".join(errors) or "не удалось подключиться")
 
 
 class TelegramTransport:
@@ -185,12 +215,29 @@ class TelegramTransport:
         self._preferred = None
         self._ssl = ssl.create_default_context()
         self._lock = threading.Lock()
+        # Последняя причина отказа и последний успех. Без них о том, почему
+        # заявка не уходит, можно узнать только из журнала контейнера,
+        # а он на чужом сервере не всегда под рукой.
+        self.last_error = None
+        self.last_probe = {}
+        self.last_success_at = None
+        self.last_address = None
 
     @property
     def working_path(self):
         if self._preferred is None:
             return "неизвестно"
         return self.NAMES.get(self._preferred, "неизвестно")
+
+    def state(self):
+        """Что показать в /api/health."""
+        return {
+            "telegram_path": self.working_path,
+            "telegram_address": self.last_address,
+            "telegram_last_error": self.last_error,
+            "telegram_last_probe": self.last_probe,
+            "telegram_last_success": self.last_success_at,
+        }
 
     def probe(self):
         """Проверяет оба пути и пишет в лог, какой отвечает. Вызывается при старте."""
@@ -217,12 +264,13 @@ class TelegramTransport:
                 status = conn.getresponse().status
                 results[name] = "отвечает за %d мс (%s, HTTP %s)" % (
                     int((time.monotonic() - started) * 1000),
-                    address,
+                    conn.used_address or address,
                     status,
                 )
                 with self._lock:
                     if self._preferred is None and family in self._candidates:
                         self._preferred = family
+                        self.last_address = conn.used_address or address
             except Exception as exc:  # noqa: BLE001
                 results[name] = "не отвечает (%s)" % exc
             finally:
@@ -233,6 +281,7 @@ class TelegramTransport:
                         pass
         for name, verdict in results.items():
             log.info("Telegram по %s: %s", name, verdict)
+        self.last_probe = results
         if self._preferred is None:
             log.warning(
                 "Ни один путь до %s не ответил при старте. "
@@ -287,6 +336,11 @@ class TelegramTransport:
                 if response.status == 200:
                     with self._lock:
                         self._preferred = family
+                        self.last_address = conn.used_address
+                        self.last_error = None
+                        self.last_success_at = datetime.now(timezone.utc).isoformat(
+                            timespec="seconds"
+                        )
                     return True, None
                 # Токен/чат неверны — перебирать семейства бессмысленно.
                 detail = _describe_telegram_error(response.status, raw)
@@ -301,9 +355,11 @@ class TelegramTransport:
                         conn.close()
                     except Exception:  # noqa: BLE001
                         pass
+        reason = "; ".join(errors) or "неизвестная ошибка"
         with self._lock:
             self._preferred = None
-        return False, "; ".join(errors) or "неизвестная ошибка"
+            self.last_error = reason
+        return False, reason
 
 
 def _describe_telegram_error(status, raw):
@@ -562,6 +618,10 @@ def render_message(lead):
     high = lead["price"].get("high")
     if low and high:
         lines += ["", "Вилка на экране: <b>%s — %s</b>" % (format_money(low), format_money(high))]
+    else:
+        # Бюджет без верхней границы: вилки человек не видел, и говорить
+        # с ним о числе, которого не было на экране, нельзя.
+        lines += ["", "Вилки на экране не было: бюджет назван без потолка."]
 
     if lead["answers"]:
         lines.append("")
@@ -846,9 +906,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "ok": True,
                     "service": APP_NAME,
                     "version": VERSION,
-                    "telegram_path": self.server.transport.working_path,
                     "pending": self.server.store.pending_count(),
                     "configured": bool(BOT_TOKEN and CHAT_ID),
+                    **self.server.transport.state(),
                 },
             )
             return
@@ -950,19 +1010,29 @@ def main():
     )
 
     def warm_up():
-        # Проба может не пройти на старте по случайности: контейнер поднялся
-        # раньше, чем догрелась сеть, или адрес Telegram ответил не сразу.
-        # Одного отказа мало, чтобы считать путь закрытым, поэтому пробуем
-        # ещё несколько раз с растущей паузой. На доставку это не влияет —
-        # send_message всё равно перебирает оба семейства, — но иначе
-        # health до перезапуска показывал бы «неизвестно», хотя всё работает.
-        for pause in (0, 30, 120, 600):
+        """Ищет рабочий путь до Telegram и не бросает попыток.
+
+        Фильтрация в РФ работает не постоянно: тот же адрес, что сейчас
+        не отвечает, через десять минут отвечает за 50 мс. Раньше проба
+        сдавалась после четырёх попыток, и контейнер до перезапуска считал
+        путь закрытым — а /api/health до перезапуска показывал «неизвестно»,
+        даже когда связь давно вернулась. Теперь проба повторяется, пока
+        путь не найден: пауза растёт до десяти минут и на этом замирает.
+
+        Заявки от этого не зависят: они лежат на диске, а очередь и так
+        перебирает семейства каждую минуту. Но пустая очередь сама по себе
+        путь не нащупает, и без этого цикла первая же заявка после долгого
+        затишья уходила бы вслепую.
+        """
+        pause = 0
+        while True:
             if pause:
                 time.sleep(pause)
             transport.probe()
             outbox.poke()
             if transport.working_path != "неизвестно":
                 return
+            pause = min(600, pause * 2 or 30)
 
     outbox.start()
     threading.Thread(target=warm_up, name="probe", daemon=True).start()

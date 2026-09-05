@@ -178,8 +178,18 @@ note "$health_json"
 echo "$health_json" | grep -q '"configured": *true' && good "токен и чат заданы" || fail "токен или чат не заданы — заявки будут копиться на диске"
 tgpath=$(echo "$health_json" | sed -n 's/.*"telegram_path": *"\([^"]*\)".*/\1/p')
 case "$tgpath" in
-  IPv6|IPv4) good "путь до Telegram выбран: $tgpath" ;;
-  *) fail "путь до Telegram: ${tgpath:-?} — проба не прошла" ;;
+  IPv6|IPv4)
+    good "путь до Telegram выбран: $tgpath"
+    note "адрес: $(echo "$health_json" | sed -n 's/.*"telegram_address": *"\([^"]*\)".*/\1/p')"
+    ;;
+  *)
+    fail "путь до Telegram: ${tgpath:-?} — проба не прошла"
+    # Причина видна прямо здесь: приёмник хранит результат последней пробы
+    # по каждому семейству и последнюю ошибку отправки, чтобы за ней
+    # не приходилось лезть в журнал контейнера.
+    note "последняя проба: $(echo "$health_json" | sed -n 's/.*"telegram_last_probe": *{\([^}]*\)}.*/\1/p')"
+    note "последняя ошибка отправки: $(echo "$health_json" | sed -n 's/.*"telegram_last_error": *"\([^"]*\)".*/\1/p')"
+    ;;
 esac
 pending=$(echo "$health_json" | sed -n 's/.*"pending": *\([0-9]*\).*/\1/p')
 [ "${pending:-0}" = "0" ] && good "неотправленных заявок нет" || fail "в очереди лежит ${pending} заявок"

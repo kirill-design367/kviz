@@ -75,6 +75,39 @@ for (const v of [
     };
   });
 
+  // Второй проход: тот же экран, но с ответом «Обсуждается» — вилки нет,
+  // вместо неё строка. Строка длиннее цифры и на узком экране переносится
+  // на несколько строк, поэтому этот случай меряется отдельно.
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: /Рассчитать стоимость/ }).click();
+  await page.waitForTimeout(700);
+  for (let i = 0; i < 7; i++) {
+    // Только живая карточка: распорка — копия того же вопроса, она
+    // aria-hidden и её кнопки выключены, кликать в неё нельзя.
+    const кнопки = page.locator('[role="dialog"] ul li button:not([disabled])');
+    const всего = await кнопки.count();
+    if (!всего) break;
+    // На вопросе о бюджете берём последний вариант — «Обсуждается».
+    const вопрос = await page.locator('[role="dialog"] h2').first().textContent();
+    await кнопки.nth(вопрос?.includes('Бюджет') ? всего - 1 : 1).click();
+    await page.waitForTimeout(780);
+  }
+  await page.waitForTimeout(900);
+  const безВилки = await page.evaluate(() => {
+    const dlg = document.querySelector('[role="dialog"]');
+    const submit = Array.from(dlg.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Отправить');
+    const r = (el) => (el ? Math.round(el.getBoundingClientRect().bottom) : null);
+    return {
+      строкаВместоЦены: dlg.querySelector('p')?.parentElement?.querySelectorAll('p')[1]?.textContent?.trim(),
+      цифраНаЭкране: !!dlg.querySelector('.figure'),
+      высотаОкна: window.innerHeight,
+      контентВысота: dlg.scrollHeight,
+      видимо: dlg.clientHeight,
+      прокруткаНужна: dlg.scrollHeight > dlg.clientHeight + 2,
+      низКнопкиОтправить: r(submit),
+    };
+  });
+
   out.push({
     вид: v.tag,
     шрифтЗаголовка: heroFont,
@@ -83,6 +116,7 @@ for (const v of [
     перспектива: persp,
     вопросы,
     вилкаИФорма: fit,
+    безВилкиИФорма: безВилки,
   });
   await ctx.close();
 }

@@ -1,193 +1,69 @@
 import { QUESTIONS, type Answers } from './quiz';
 
 /**
- * Расчёт вилки стоимости.
+ * Расчёт стоимости.
  *
- * Развилка одна и она в самом начале: НАЗВАН ЛИ БЮДЖЕТ ЧИСЛОМ.
+ * Вилка считается ТОЛЬКО от названного бюджета и больше ни от чего.
+ * Берём верхнюю границу выбранного диапазона: низ — минус 5 %, верх — плюс 15 %.
  *
- * Назван («до 50 000», «50–150 000», «150–300 000») — вилка строится только
- * от верхней границы названного: низ минус 5 %, верх плюс 15 %. Ни задача,
- * ни структура, ни приоритет в этой ветке не участвуют.
+ * Если человек назвал «больше 300 000» или «обсуждается», верхней границы нет,
+ * и считать не от чего. Тогда вилка НЕ показывается вовсе: вместо неё строка
+ * о том, что сумму назовём при обсуждении. Прежде в этом случае работал расчёт
+ * по задаче, структуре и приоритету — и человек, назвавший «больше 300 000»,
+ * видел 55 000—80 000. Показывать сумму втрое ниже названного порога хуже,
+ * чем не показывать ничего.
  *
- * Не назван («больше 300 000», «обсуждается») — считаем по трём ответам:
- * что делаем (1), какая структура (5), что важнее (6). Дальше всё описанное
- * ниже относится только к этой второй ветке.
- *
- * Ориентиры студии — это НИЖНИЕ границы («от»), поэтому ни один множитель
- * не опускает низ вилки под соответствующий ориентир. «Скорость запуска»
- * двигает вилку вниз относительно других приоритетов тем, что прижимает верх:
- * меньше итераций и меньше объём — потолок ниже, а пол остаётся полом.
- *
- * Неопределённость («не знаю», «пока не определился») трактуется как
- * ОБЪЕДИНЕНИЕ правдоподобных вариантов: низ берётся от самого дешёвого
- * из них, верх — от самого дорогого. Если считать неопределённость просто
- * «средним случаем», получается ловушка: человек, которому нужен магазин
- * но который честно выбрал «не знаю», увидел бы потолок НИЖЕ, чем если бы
- * ответил точно. Такая модель учит не отвечать.
+ * Вместе с той веткой убран весь её механизм: таблица «задача × структура»,
+ * множители приоритета, объединение неопределённых ответов, ограничители
+ * ширины и оговорки. Он больше ниоткуда не вызывается, а мёртвый код,
+ * описанный в документации как живой, вреднее отсутствующего. История правок
+ * его помнит, вернуть можно одной командой.
  */
 
-export type PriceRange = {
-  low: number;
-  high: number;
-  /** Что именно повлияло на число — показываем человеку, чтобы цифра не выглядела гаданием. */
-  factors: { label: string; value: string }[];
-  /** Ответы, которые человек оставил неопределёнными. Пусто — значит вилка узкая по делу. */
-  uncertain: string[];
-  /**
-   * Оговорка для неопределённых ответов: что именно вилка НЕ покрывает.
-   * Строго накрыть все варианты нельзя — от переделки лендинга до магазина
-   * получается разброс больше чем втрое, а такая вилка уже ничего не значит.
-   * Поэтому вилка строится по самому вероятному прочтению, а край,
-   * который в неё не попал, называется словами.
-   */
-  caveat: string | null;
-};
+export type PriceEstimate =
+  | {
+      kind: 'range';
+      low: number;
+      high: number;
+    }
+  | {
+      kind: 'discuss';
+      /** Что показать вместо числа. Короткая строка, без обещаний и давления. */
+      note: string;
+    };
 
 /**
- * Ориентиры «от». Низ вилки никогда не опускается ниже.
- * Уровень цен вдвое ниже прежнего — так решил заказчик.
+ * Верхняя граница названного бюджета.
+ * Для «больше 300 000» и «обсуждается» её нет — там числа не будет.
  */
-const FLOOR = {
-  landing: 50_000,
-  multi: 95_000,
-  shop: 150_000,
-} as const;
-
-type Task = 'new' | 'redesign' | 'shop' | 'unsure';
-type Structure = 'landing' | 'multi' | 'shop' | 'unknown';
-type CertainTask = Exclude<Task, 'unsure'>;
-type CertainStructure = Exclude<Structure, 'unknown'>;
-
-/**
- * База по паре «что делаем» × «структура». Только определённые ответы.
- *
- * Переделка дешевле работы с нуля при той же структуре: часть решений,
- * контента и логики уже существует. Магазин стоит своего ориентира
- * независимо от того, назван он в первом вопросе или в пятом, — иначе
- * два пути к одному и тому же ответу давали бы разные деньги.
- */
-const BASE: Record<CertainTask, Record<CertainStructure, number>> = {
-  new: {
-    landing: FLOOR.landing,
-    multi: FLOOR.multi,
-    shop: FLOOR.shop,
-  },
-  shop: {
-    landing: FLOOR.shop,
-    multi: FLOOR.shop,
-    shop: FLOOR.shop,
-  },
-  redesign: {
-    landing: 40_000,
-    multi: 75_000,
-    shop: 120_000,
-  },
-};
-
-/**
- * Что «не знаю» и «пока не определился» означают на самом деле.
- * Низ — самый дешёвый правдоподобный вариант, верх — самый дорогой.
- *
- * Про структуру важная тонкость. Если человек в первом вопросе уже сказал,
- * что это не магазин, то «не знаю» про структуру означает выбор между
- * лендингом и многостраничником, а не «вплоть до магазина»: тянуть верх
- * до магазина значило бы не поверить его же ответу и раздуть вилку втрое.
- * Магазин попадает в верх только тогда, когда и задача не определена.
- */
-const CHEAPEST_TASK: CertainTask = 'new';
-const DEAREST_TASK: CertainTask = 'shop';
-const CHEAPEST_STRUCTURE: CertainStructure = 'landing';
-
-/**
- * Диапазон, который человек назвал в вопросе о бюджете.
- * null — числа нет: «больше 300 000» и «обсуждается» ничего не задают,
- * а отсутствие ответа тем более. Там считаем чисто по задаче.
- */
-const BUDGET_CAP: Record<string, number | null> = {
+const BUDGET_CAP: Record<string, number> = {
   lt50: 50_000,
   '50-150': 150_000,
   '150-300': 300_000,
-  // Верхней границы нет — считаем по задаче, структуре и приоритету.
-  gt300: null,
-  discuss: null,
 };
 
 /** Насколько вилка расходится от верхней границы бюджета. */
 const BUDGET_LOW = 0.95;
 const BUDGET_HIGH = 1.15;
 
-/** Приоритет: [множитель низа, множитель верха]. Низ никогда не меньше 1. */
-const PRIORITY: Record<string, { low: number; high: number; note: string }> = {
-  design: { low: 1.15, high: 1.55, note: 'уникальный дизайн' },
-  features: { low: 1.25, high: 1.7, note: 'функциональность' },
-  speed: { low: 1.0, high: 1.25, note: 'скорость запуска' },
-  price: { low: 1.0, high: 1.35, note: 'цена' },
-};
-
-/**
- * Ширина вилки. Уже 1.35 — читается как смета, а не как оценка по трём кликам,
- * и человек запомнит верх как обещание.
- *
- * Потолок ширины зависит от того, сколько ответов человек оставил
- * неопределёнными. Единый жёсткий потолок срезал бы верх именно у самых
- * неопределённых ответов — и получалось бы, что «не знаю» даёт потолок ниже,
- * чем честный дорогой ответ. Это ровно та ловушка, которой быть не должно.
- */
-const MIN_SPREAD = 1.35;
-const MAX_SPREAD_BY_UNCERTAINTY = [2.2, 2.5, 2.8];
-/* Шаг округления. Вдвое мельче прежнего: суммы стали вдвое меньше,
-   и десятитысячный шаг съедал бы разницу между вариантами. */
+/** Шаг округления. */
 const STEP = 5_000;
 
-const BUDGET_LABEL: Record<string, string> = Object.fromEntries(
-  (QUESTIONS.find((q) => q.id === 'budget')?.options ?? []).map((o) => [o.id, o.label]),
-);
-
-const TASK_LABEL: Record<string, string> = {
-  new: 'Сайт с нуля',
-  redesign: 'Переделка существующего',
-  shop: 'Интернет-магазин',
-  unsure: 'Задача пока не определена',
-};
-const STRUCTURE_LABEL: Record<string, string> = {
-  landing: 'лендинг',
-  multi: 'многостраничник',
-  shop: 'интернет-магазин',
-  unknown: 'структура пока не выбрана',
-};
-
-const roundTo = (value: number) => Math.round(value / STEP) * STEP;
 const floorTo = (value: number) => Math.floor(value / STEP) * STEP;
 const ceilTo = (value: number) => Math.ceil(value / STEP) * STEP;
 
-function baseOf(task: CertainTask, structure: CertainStructure) {
-  return BASE[task][structure];
-}
+/**
+ * Строка вместо вилки. Причина названа прямо: цифры нет не потому, что мы
+ * её прячем, а потому, что брать её не из чего.
+ */
+const DISCUSS_NOTE =
+  'Точную сумму назову при обсуждении: потолок бюджета вы не назвали.';
 
-/** Пара «самая дешёвая база — самая дорогая база» с учётом неопределённости. */
-function baseRange(task: Task, structure: Structure): { low: number; high: number } {
-  const taskLow: CertainTask = task === 'unsure' ? CHEAPEST_TASK : task;
-  const taskHigh: CertainTask = task === 'unsure' ? DEAREST_TASK : task;
-  const structLow: CertainStructure =
-    structure === 'unknown' ? CHEAPEST_STRUCTURE : structure;
-  // Магазин уходит в верх, только если задача тоже не названа.
-  const structHigh: CertainStructure =
-    structure === 'unknown' ? (task === 'unsure' ? 'shop' : 'multi') : structure;
-  return {
-    low: baseOf(taskLow, structLow),
-    high: baseOf(taskHigh, structHigh),
-  };
-}
+export function calculatePrice(answers: Answers): PriceEstimate {
+  const cap = BUDGET_CAP[answers.budget ?? ''];
+  if (!cap) return { kind: 'discuss', note: DISCUSS_NOTE };
 
-export function calculatePrice(answers: Answers): PriceRange {
   /*
-   * Назван бюджет числом — вилка строится ТОЛЬКО от него, и больше ни от чего.
-   *
-   * Берём верхнюю границу выбранного диапазона: низ — минус 5 %, верх —
-   * плюс 15 %. Задача, структура и приоритет в этой ветке не участвуют:
-   * так решил заказчик, и прежняя логика «посчитать по задаче, а потом
-   * подтянуть вверх» для этих трёх ответов убрана целиком.
-   *
    * Округление разное на двух концах: низ вниз, верх вверх. Умножение
    * на 0,95 в двух случаях из трёх попадает ровно в середину шага
    * (47 500 и 142 500), и округлять такую середину вверх — значит поднять
@@ -196,93 +72,19 @@ export function calculatePrice(answers: Answers): PriceRange {
    * что он назвал. Вниз — он видит 45 000, и его сумма внутри вилки.
    * От округления вилка может стать только шире, но не уже.
    */
-  const cap = BUDGET_CAP[answers.budget ?? ''] ?? null;
-  if (cap) {
-    return {
-      low: floorTo(cap * BUDGET_LOW),
-      high: ceilTo(cap * BUDGET_HIGH),
-      uncertain: [],
-      // Оговорки про неопределённые ответы здесь были бы неправдой:
-      // ширина вилки взялась из бюджета, а не из того, чего человек не выбрал.
-      caveat: null,
-      factors: [{ label: 'Бюджет', value: BUDGET_LABEL[answers.budget ?? ''] ?? '—' }],
-    };
-  }
-
-  const task = (answers.task ?? 'unsure') as Task;
-  // Выбравшим магазин в первом вопросе вопрос про структуру не задаётся,
-  // поэтому структура берётся из задачи, а не из пропущенного ответа.
-  const structure: Structure =
-    task === 'shop' ? 'shop' : ((answers.structure ?? 'unknown') as Structure);
-  const priority = answers.priority ?? 'price';
-
-  const bases = BASE[task === 'unsure' ? CHEAPEST_TASK : task]
-    ? baseRange(task, structure)
-    : baseRange('unsure', 'unknown');
-  const weight = PRIORITY[priority] ?? PRIORITY.price;
-
-  const uncertain: string[] = [];
-  if (task === 'unsure') uncertain.push('задача');
-  if (structure === 'unknown') uncertain.push('структура');
-  const maxSpread = MAX_SPREAD_BY_UNCERTAINTY[uncertain.length] ?? 2.8;
-
-  let low = roundTo(bases.low * weight.low);
-  let high = ceilTo(bases.high * weight.high);
-
-  // Пол — это обещание студии, ниже ориентира он не опускается никогда.
-  if (low < bases.low) low = bases.low;
-
-  // Диапазон должен читаться как диапазон, но не как «от забора до обеда».
-  // Обе границы клампа считаются в свою сторону: иначе округление вверх
-  // при понижающем ограничителе делает сам ограничитель недостижимым.
-  if (high < low * MIN_SPREAD) high = ceilTo(low * MIN_SPREAD);
-  if (high > low * maxSpread) high = floorTo(low * maxSpread);
-
-  // Сюда попадают только «больше 300 000» и «обсуждается»: у них верхней
-  // границы нет, и вилка целиком считается по задаче, структуре и приоритету.
-
   return {
-    low,
-    high,
-    uncertain,
-    caveat: caveatFor(task, structure, high),
-    factors: [
-      { label: 'Задача', value: TASK_LABEL[task] ?? '—' },
-      { label: 'Структура', value: capitalize(STRUCTURE_LABEL[structure] ?? '—') },
-      { label: 'Приоритет', value: capitalize(weight.note) },
-    ],
+    kind: 'range',
+    low: floorTo(cap * BUDGET_LOW),
+    high: ceilTo(cap * BUDGET_HIGH),
   };
 }
 
-/**
- * Что вилка не покрывает. Считаем самое вероятное прочтение неопределённого
- * ответа, а про менее вероятный, но заметно более дорогой край говорим прямо:
- * это честнее, чем растянуть вилку втрое и сделать её бессмысленной.
- */
-function caveatFor(task: Task, structure: Structure, high: number): string | null {
-  if (task === 'unsure' && high < FLOOR.shop) {
-    return 'Считал по самому частому случаю — обычный сайт. Если задача окажется интернет-магазином, вилка начинается от 150 000 ₽.';
-  }
-  if (task === 'unsure') {
-    return 'Задачу вы пока не выбрали, поэтому вилка широкая: она покрывает и обычный сайт, и интернет-магазин. Определитесь — и я назову диапазон уже.';
-  }
-  if (structure === 'unknown') {
-    return 'Структуру вы пока не выбрали, поэтому вилка широкая: она покрывает и лендинг, и многостраничник. Как только структура прояснится, диапазон сузится.';
-  }
-  return null;
-}
-
-function capitalize(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
+/** Ответы о бюджете, при которых вилки на экране не будет. */
+export const BUDGETS_WITHOUT_RANGE = (QUESTIONS.find((q) => q.id === 'budget')?.options ?? [])
+  .map((o) => o.id)
+  .filter((id) => !BUDGET_CAP[id]);
 
 /** 250000 → «250 000». Неразрывные пробелы, чтобы число не рвалось по строкам. */
 export function formatMoney(value: number): string {
   return value.toLocaleString('ru-RU').replace(/ |\s/g, ' ');
 }
-
-/** Ключи вопросов, которые участвуют в расчёте. */
-export const PRICING_INPUTS = ['task', 'structure', 'priority', 'budget'] as const;
-
-export const BUDGET_QUESTION_LABEL =
-  QUESTIONS.find((q) => q.id === 'budget')?.title ?? 'Бюджет на проект';
