@@ -142,18 +142,30 @@ strip_block() {
 NEW=$(mktemp)
 strip_block "$CONF" > "$NEW"
 
-if [ "$MODE" != remove ]; then
-  BLOCK=$(mktemp)
-  SRC="$RAW/nginx.cenasaita.$MODE.conf"
-  if ! curl -fsSL "$SRC" -o "$BLOCK"; then
-    rm -f "$NEW" "$BLOCK"
-    die "не скачался блок $SRC"
-  fi
-  grep -q "^$BEGIN" "$BLOCK" || { rm -f "$NEW" "$BLOCK"; die "в скачанном блоке нет маркера — не применяю"; }
-  grep -q 'cenasaita.ru' "$BLOCK" || { rm -f "$NEW" "$BLOCK"; die "в скачанном блоке нет домена — не применяю"; }
-  printf '\n' >> "$NEW"
-  cat "$BLOCK" >> "$NEW"
-  rm -f "$BLOCK"
+# Какие куски кладём. В режиме https блок :80 остаётся на месте: он не только
+# уводит с http на https, но и отдаёт /.well-known/acme-challenge — именно
+# через него certbot продлевает сертификат. Убрать его вместе со старым блоком
+# и не вернуть значило бы поставить бомбу с часовым механизмом на 60 дней.
+case "$MODE" in
+  http)  PARTS="http" ;;
+  https) PARTS="http https" ;;
+  *)     PARTS="" ;;
+esac
+
+if [ -n "$PARTS" ]; then
+  for part in $PARTS; do
+    BLOCK=$(mktemp)
+    SRC="$RAW/nginx.cenasaita.$part.conf"
+    if ! curl -fsSL "$SRC" -o "$BLOCK"; then
+      rm -f "$NEW" "$BLOCK"
+      die "не скачался блок $SRC"
+    fi
+    grep -q "^$BEGIN" "$BLOCK" || { rm -f "$NEW" "$BLOCK"; die "в блоке $part нет маркера — не применяю"; }
+    grep -q 'cenasaita.ru' "$BLOCK" || { rm -f "$NEW" "$BLOCK"; die "в блоке $part нет домена — не применяю"; }
+    printf '\n' >> "$NEW"
+    cat "$BLOCK" >> "$NEW"
+    rm -f "$BLOCK"
+  done
 fi
 
 # --- доказательство, что чужое не задето ------------------------------------ #
@@ -192,6 +204,18 @@ restore() {
   cat "$BACKUP" > "$CONF"
   echo "  копия возвращена"
 }
+
+# Без сертификата блок 443 не пройдёт nginx -t, и мы зря сходим до отката.
+# Лучше сказать об этом до того, как файл будет переписан на боевом сервере.
+if [ "$MODE" = https ]; then
+  say "Сертификат cenasaita.ru"
+  if docker exec "$NGINX_CT" test -f /etc/letsencrypt/live/cenasaita.ru/fullchain.pem 2>/dev/null; then
+    echo "  на месте: /etc/letsencrypt/live/cenasaita.ru/fullchain.pem"
+  else
+    restore
+    die "внутри nginx нет /etc/letsencrypt/live/cenasaita.ru/fullchain.pem — сначала выпустите сертификат"
+  fi
+fi
 
 # --- проверка конфигурации внутри контейнера -------------------------------- #
 say "nginx -t внутри контейнера"
