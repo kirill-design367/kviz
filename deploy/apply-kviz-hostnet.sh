@@ -211,8 +211,48 @@ if [ "$ok" != yes ] || [ "$CODE" != "200" ]; then
   die "контейнер не встал в сети хоста — вернул как было"
 fi
 
+# --- 4б. А достучится ли до приёмника САМ NGINX ------------------------------ #
+# Хост и контейнер идут к этому адресу разными путями: с хоста — через
+# loopback, из контейнера — входящим НА хост, то есть через INPUT, где
+# командует ufw с политикой «входящее запрещено». Ответ с хоста ничего
+# не говорит о том, дойдёт ли nginx. Пока это не проверено, конфиг nginx
+# не трогаем: иначе сайт ляжет — ровно так он однажды и лёг.
+say "Достучится ли до приёмника сам nginx"
+FROM_NGINX=unknown
+if docker exec "$NGINX_CT" sh -c 'command -v wget' >/dev/null 2>&1; then
+  docker exec "$NGINX_CT" wget -q -T 5 -O /dev/null "http://$BIND:$PORT/api/health" 2>/dev/null \
+    && FROM_NGINX=yes || FROM_NGINX=no
+elif docker exec "$NGINX_CT" sh -c 'command -v nc' >/dev/null 2>&1; then
+  docker exec "$NGINX_CT" nc -z -w 5 "$BIND" "$PORT" 2>/dev/null && FROM_NGINX=yes || FROM_NGINX=no
+fi
+case "$FROM_NGINX" in
+  yes) echo "  дошёл" ;;
+  no)
+    echo "  НЕ дошёл. Порт $PORT на адресе $BIND закрыт для docker-сети:"
+    echo "  для контейнера это входящее соединение на хост, а там ufw."
+    echo "  Конфиг nginx не тронут, возвращаю контейнер в мост — сайт работает."
+    restore_compose
+    echo
+    echo "  Чтобы открыть только этот путь и повторить переезд:"
+    echo "    ufw allow from $(docker network inspect "$NET" -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}') to $BIND port $PORT proto tcp"
+    echo "    затем запустите этот скрипт снова"
+    exit 1
+    ;;
+  *) echo "  ни wget, ни nc в контейнере nginx нет — проверю по факту, после правки" ;;
+esac
+
 # --- 5. Теперь блок nginx --------------------------------------------------- #
 say "Блок nginx: адрес вместо имени"
+# Своя копия конфига: apply-nginx.sh страхует основной сайт, а квиз после
+# переключения проверяем мы сами и откатываем, если он не поднялся.
+CONF=$(docker inspect "$NGINX_CT" \
+  -f '{{range .Mounts}}{{if eq .Destination "/etc/nginx/conf.d/default.conf"}}{{.Source}}{{end}}{{end}}' 2>/dev/null)
+NG_BACKUP=""
+if [ -n "$CONF" ] && [ -f "$CONF" ]; then
+  NG_BACKUP="$CONF.before-hostnet-$STAMP"
+  cp -a "$CONF" "$NG_BACKUP"
+  echo "  копия конфига: $NG_BACKUP"
+fi
 if ! curl -fsSL "$RAW/apply-nginx.sh" -o /tmp/apply-nginx.sh; then
   die "не скачался apply-nginx.sh — контейнер уже в сети хоста, nginx ещё смотрит на имя"
 fi
@@ -220,8 +260,25 @@ AUREA_RAW="$RAW" bash /tmp/apply-nginx.sh https || die "правка nginx не 
 
 # --- 6. Что получилось ------------------------------------------------------ #
 say "Итог"
-echo "  основной сайт: HTTP $(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H 'Host: aureadesign.ru' https://127.0.0.1/ --insecure)"
-echo "  квиз:          HTTP $(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -H 'Host: cenasaita.ru' https://127.0.0.1/ --insecure)"
+MAIN=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 -H 'Host: aureadesign.ru' https://127.0.0.1/ --insecure)
+QUIZ=$(curl -s -o /dev/null -w '%{http_code}' --max-time 12 -H 'Host: cenasaita.ru' https://127.0.0.1/ --insecure)
+echo "  основной сайт: HTTP $MAIN"
+echo "  квиз:          HTTP $QUIZ"
+
+# Квиз обязан отвечать 200. Не отвечает — возвращаем и конфиг, и сеть:
+# оставить сайт лежать ради рабочего Telegram нельзя.
+if [ "$QUIZ" != "200" ]; then
+  echo "  квиз не отвечает — откатываю и nginx, и переезд"
+  if [ -n "$NG_BACKUP" ] && [ -f "$NG_BACKUP" ]; then
+    cat "$NG_BACKUP" > "$CONF"
+    docker exec "$NGINX_CT" nginx -t >/dev/null 2>&1 && docker exec "$NGINX_CT" nginx -s reload >/dev/null 2>&1
+    echo "  конфиг nginx возвращён"
+  fi
+  restore_compose
+  sleep 5
+  echo "  после возврата — квиз: HTTP $(curl -s -o /dev/null -w '%{http_code}' --max-time 12 -H 'Host: cenasaita.ru' https://127.0.0.1/ --insecure), основной сайт: HTTP $(curl -s -o /dev/null -w '%{http_code}' --max-time 12 -H 'Host: aureadesign.ru' https://127.0.0.1/ --insecure)"
+  die "переезд отменён, всё вернулось как было"
+fi
 echo "  здоровье приёмника:"
 curl -s --max-time 10 "http://$BIND:$PORT/api/health" | sed 's/^/    /'
 echo
