@@ -22,11 +22,15 @@ export function Hero({ onStart }: Props) {
 
       <div className="shell flex flex-1 items-center justify-center py-10 text-center md:py-14">
         <div className="w-full max-w-[52rem]">
-          <h1
-            style={delay(1)}
-            className="heading-anticva reveal text-[2rem] leading-[1.02] xs:text-[2.4rem] sm:text-[3.2rem] lg:text-[3.8rem] xl:text-[4.4rem]"
-          >
-            Узнайте стоимость вашего сайта за минуту
+          {/* Три строки, и ровно эти три: разбивка не отдана на откуп
+              браузеру, поэтому она одинакова на любом экране. Каждая
+              строка неразрывна, а размер шрифта считается от ширины
+              колонки — так самая длинная строка всегда помещается
+              целиком и ни одно слово не переносится. */}
+          <h1 style={delay(1)} className="heading-anticva heading-lines reveal">
+            <span className="block">Узнайте стоимость</span>
+            <span className="block">вашего сайта</span>
+            <span className="block">за минуту</span>
           </h1>
 
           <p

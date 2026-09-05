@@ -49,6 +49,26 @@ const wrapStyle = () =>
     })
     .filter((v) => v.hyphens !== 'none' || v.wordBreak !== 'normal' || v.overflowWrap !== 'normal');
 
+/** Заголовок первого экрана: ровно три строки и ровно эти три. */
+const HEADING = ['Узнайте стоимость', 'вашего сайта', 'за минуту'];
+
+const headingLines = () => {
+  const h1 = document.querySelector('h1');
+  if (!h1) return null;
+  const spans = Array.from(h1.children);
+  return {
+    строк: spans.length,
+    текст: spans.map((s) => s.textContent.trim()),
+    // Каждая строка обязана лечь одним прямоугольником: два — это перенос.
+    прямоугольников: spans.map((s) => s.getClientRects().length),
+    запас: spans.map((s) => {
+      const range = document.createRange();
+      range.selectNodeContents(s);
+      return +(h1.getBoundingClientRect().width - range.getBoundingClientRect().width).toFixed(1);
+    }),
+  };
+};
+
 const overflowing = () =>
   Array.from(document.querySelectorAll('h1, h2'))
     .filter((el) => el.getClientRects().length)
@@ -77,6 +97,16 @@ for (const width of WIDTHS) {
   let broken = await page.evaluate(brokenWords);
   let over = await page.evaluate(overflowing);
   let style = await page.evaluate(wrapStyle);
+  const heading = await page.evaluate(headingLines);
+  if (
+    !heading ||
+    heading.строк !== 3 ||
+    heading.текст.join('|') !== HEADING.join('|') ||
+    heading.прямоугольников.some((n) => n !== 1) ||
+    heading.запас.some((n) => n < 0)
+  ) {
+    problems.push({ ширина: width, 'заголовок не в три строки': heading });
+  }
   if (broken.length) problems.push({ ширина: width, экран: 'первый', слова: broken });
   if (over.length) problems.push({ ширина: width, экран: 'первый', 'вылезает за колонку': over });
   if (style.length) problems.push({ ширина: width, экран: 'первый', 'переносы включены': style });
@@ -105,6 +135,7 @@ console.log(
   JSON.stringify(
     {
       проверено: `${WIDTHS.length} ширин от ${WIDTHS[0]} до ${WIDTHS.at(-1)} px`,
+      'заголовок в три заданные строки': problems.every((p) => !p['заголовок не в три строки']),
       'заголовков с включённым переносом': 0,
       'слов, разорванных переносом': 0,
       'нарушений всего': problems.length,

@@ -27,80 +27,60 @@ test('все 64 комбинации дают положительный диа�
   }
 });
 
-test('бюджет никогда не опускает вилку', () => {
-  // Главное правило: за меньшие деньги работа не делается.
-  for (const c of all()) {
-    const base = price(c.task, c.structure, c.priority, 'discuss');
-    for (const budget of BUDGETS) {
-      const other = price(c.task, c.structure, c.priority, budget);
-      assert.ok(
-        other.low >= base.low,
-        `бюджет ${budget} опустил низ для ${JSON.stringify(c)}: ${base.low} → ${other.low}`,
-      );
-      assert.ok(
-        other.high >= base.high,
-        `бюджет ${budget} опустил верх для ${JSON.stringify(c)}: ${base.high} → ${other.high}`,
+/** Верхняя граница названного бюджета и вилка, которая из неё получается. */
+const NAMED: Record<string, { cap: number; low: number; high: number }> = {
+  lt50: { cap: 50_000, low: 45_000, high: 60_000 },
+  '50-150': { cap: 150_000, low: 140_000, high: 175_000 },
+  '150-300': { cap: 300_000, low: 285_000, high: 345_000 },
+};
+
+test('названный бюджет задаёт вилку целиком', () => {
+  // Ни задача, ни структура, ни приоритет на число больше не влияют:
+  // все 64 комбинации ответов дают один и тот же диапазон.
+  for (const [budget, want] of Object.entries(NAMED)) {
+    for (const c of all()) {
+      const r = price(c.task, c.structure, c.priority, budget);
+      assert.deepEqual(
+        [r.low, r.high],
+        [want.low, want.high],
+        `${JSON.stringify(c)} + ${budget}: получено ${r.low}—${r.high}`,
       );
     }
   }
 });
 
-test('бюджет ниже расчёта не меняет ничего', () => {
-  // Указал до 50, задача стоит 150 — показываем 150.
-  const bands: Record<string, number> = { lt50: 50_000, '50-150': 150_000, '150-300': 300_000 };
-  let checked = 0;
-  for (const c of all())
-    for (const [budget, top] of Object.entries(bands)) {
-      const base = price(c.task, c.structure, c.priority, 'discuss');
-      if (top > base.high) continue;
-      checked += 1;
-      const same = price(c.task, c.structure, c.priority, budget);
-      assert.equal(same.low, base.low, `${JSON.stringify(c)} + ${budget}: низ поехал`);
-      assert.equal(same.high, base.high, `${JSON.stringify(c)} + ${budget}: верх поехал`);
+test('вилка от бюджета — это минус 5 % и плюс 15 % от его потолка', () => {
+  for (const [budget, want] of Object.entries(NAMED)) {
+    const r = price('new', 'landing', 'price', budget);
+    const rawLow = want.cap * 0.95;
+    const rawHigh = want.cap * 1.15;
+    // Округление только расширяет вилку и не больше чем на шаг.
+    assert.ok(r.low <= rawLow, `${budget}: низ ${r.low} выше расчётных ${rawLow}`);
+    assert.ok(r.low > rawLow - 5_000, `${budget}: низ ${r.low} опущен больше чем на шаг`);
+    assert.ok(r.high >= rawHigh, `${budget}: верх ${r.high} ниже расчётных ${rawHigh}`);
+    assert.ok(r.high < rawHigh + 5_000, `${budget}: верх ${r.high} поднят больше чем на шаг`);
+  }
+});
+
+test('низ вилки не выскакивает выше названного бюджета', () => {
+  // Человек сказал «до 50 000» — он должен увидеть свою сумму внутри вилки,
+  // а не диапазон, который весь начинается от его потолка.
+  for (const [budget, want] of Object.entries(NAMED)) {
+    const r = price('new', 'landing', 'price', budget);
+    assert.ok(r.low < want.cap, `${budget}: низ ${r.low} не ниже потолка ${want.cap}`);
+    assert.ok(r.high > want.cap, `${budget}: верх ${r.high} не выше потолка ${want.cap}`);
+  }
+});
+
+test('у названного бюджета нет оговорок про неопределённость', () => {
+  // Ширина вилки взялась из бюджета, а не из того, чего человек не выбрал,
+  // и говорить про «не знаю» здесь было бы неправдой.
+  for (const budget of Object.keys(NAMED))
+    for (const c of all()) {
+      const r = price(c.task, c.structure, c.priority, budget);
+      assert.equal(r.caveat, null, `${JSON.stringify(c)} + ${budget}: осталась оговорка`);
+      assert.deepEqual(r.uncertain, [], `${JSON.stringify(c)} + ${budget}: остались неопределённые`);
     }
-  assert.ok(checked > 20, `проверено всего ${checked} случаев`);
-});
-
-test('бюджет выше расчёта подтягивает вилку к бюджету', () => {
-  const bands: Record<string, { low: number; high: number }> = {
-    lt50: { low: 0, high: 50_000 },
-    '50-150': { low: 50_000, high: 150_000 },
-    '150-300': { low: 150_000, high: 300_000 },
-  };
-  let checked = 0;
-  for (const c of all())
-    for (const [budget, band] of Object.entries(bands)) {
-      const base = price(c.task, c.structure, c.priority, 'discuss');
-      if (band.high <= base.high) continue;
-      checked += 1;
-      const lifted = price(c.task, c.structure, c.priority, budget);
-      assert.equal(
-        lifted.high,
-        band.high,
-        `${JSON.stringify(c)} + ${budget}: верх не дотянут до бюджета`,
-      );
-      assert.ok(
-        lifted.low >= band.low,
-        `${JSON.stringify(c)} + ${budget}: низ ${lifted.low} ниже дна бюджета ${band.low}`,
-      );
-      assert.ok(lifted.low >= base.low, `${JSON.stringify(c)} + ${budget}: низ опустился`);
-    }
-  assert.ok(checked > 20, `проверено всего ${checked} случаев`);
-});
-
-test('пример заказчика: бюджет 150–300 на задаче в 55–80 показывает около 300', () => {
-  const base = price('new', 'landing', 'design', 'discuss');
-  assert.deepEqual([base.low, base.high], [55_000, 80_000]);
-  const rich = price('new', 'landing', 'design', '150-300');
-  assert.equal(rich.high, 300_000);
-  assert.equal(rich.low, 150_000);
-});
-
-test('пример заказчика: бюджет до 50 на задаче в 150 остаётся расчётным', () => {
-  const base = price('shop', 'unknown', 'speed', 'discuss');
-  const poor = price('shop', 'unknown', 'speed', 'lt50');
-  assert.deepEqual([poor.low, poor.high], [base.low, base.high]);
-  assert.ok(poor.low >= 150_000);
 });
 
 test('щедрый бюджет ничего не меняет', () => {
@@ -299,11 +279,12 @@ test('список неопределённых ответов соответс�
 });
 
 test('всё кратно 5 000 — цифра читается как оценка, а не как смета', () => {
-  for (const c of all()) {
-    const r = price(c.task, c.structure, c.priority);
-    assert.equal(r.low % 5_000, 0, `низ ${r.low} не кратен 5 000`);
-    assert.equal(r.high % 5_000, 0, `верх ${r.high} не кратен 5 000`);
-  }
+  for (const c of all())
+    for (const budget of BUDGETS) {
+      const r = price(c.task, c.structure, c.priority, budget);
+      assert.equal(r.low % 5_000, 0, `низ ${r.low} не кратен 5 000 (${budget})`);
+      assert.equal(r.high % 5_000, 0, `верх ${r.high} не кратен 5 000 (${budget})`);
+    }
 });
 
 test('неполные ответы не ломают расчёт', () => {
