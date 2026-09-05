@@ -38,22 +38,43 @@ esac
 
 cd "$STACK" || die "нет каталога $STACK"
 
-# Какой файл конфигурации подключён к контейнеру прямо сейчас.
-CONF=$(sed -n 's/^NGINX_CONF=//p' .env | head -1)
-CONF="${CONF:-./deploy/nginx.https.conf}"
-[ -f "$CONF" ] || die "файл $CONF не найден"
+# Значение ключа из .env: без пробелов вокруг, без кавычек, без \r.
+# Пробел в конце строки не виден глазом, но ломает всё: путь с ним
+# не существует, и скрипт падал на ровном месте. .env при этом не трогаем —
+# чинить надо чтение, а не чужой файл.
+env_value() {
+  sed -n "s/^[[:space:]]*$1[[:space:]]*=//p" .env 2>/dev/null \
+    | head -1 \
+    | tr -d '\r' \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+          -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
+}
 
 say "Файл конфигурации"
-echo "  NGINX_CONF из .env: $CONF"
-# Монтирование фиксируется в момент СОЗДАНИЯ контейнера. Если .env правили
-# после запуска nginx, внутрь может быть проброшен совсем другой файл —
-# тогда правки уходят в никуда, а nginx -t их даже не видит.
+FROM_ENV=$(env_value NGINX_CONF)
+echo "  NGINX_CONF из .env: ${FROM_ENV:-не задан}"
+
+# Монтирование фиксируется в момент СОЗДАНИЯ контейнера, поэтому источник
+# правды — то, что реально проброшено, а не то, что сегодня написано в .env.
+# Если переменную меняли после запуска nginx, внутрь проброшен старый файл,
+# и правки уходили бы туда, куда nginx не смотрит.
 MOUNTED=$(docker inspect "$NGINX_CT" \
   -f '{{range .Mounts}}{{if eq .Destination "/etc/nginx/conf.d/default.conf"}}{{.Source}}{{end}}{{end}}' 2>/dev/null)
 echo "  реально проброшен в контейнер: ${MOUNTED:-не определился}"
-if [ -n "$MOUNTED" ] && [ "$(readlink -f "$CONF")" != "$(readlink -f "$MOUNTED")" ]; then
-  echo "  ВНИМАНИЕ: это РАЗНЫЕ файлы. Правлю тот, что реально проброшен."
+
+if [ -n "$MOUNTED" ] && [ -f "$MOUNTED" ]; then
   CONF="$MOUNTED"
+elif [ -n "$FROM_ENV" ] && [ -f "$FROM_ENV" ]; then
+  CONF="$FROM_ENV"
+else
+  CONF="./deploy/nginx.https.conf"
+fi
+[ -f "$CONF" ] || die "не нашёл файл конфигурации: ни проброшенный, ни '$FROM_ENV', ни ./deploy/nginx.https.conf"
+
+if [ -n "$MOUNTED" ] && [ -n "$FROM_ENV" ] \
+   && [ "$(readlink -f "$FROM_ENV" 2>/dev/null)" != "$(readlink -f "$MOUNTED" 2>/dev/null)" ]; then
+  echo "  ВНИМАНИЕ: .env и контейнер указывают на РАЗНЫЕ файлы."
+  echo "  Правлю тот, что реально проброшен — только его видит nginx."
 fi
 echo "  правим: $CONF"
 echo "  блоков server: $(grep -c '^server[[:space:]]*{' "$CONF")"

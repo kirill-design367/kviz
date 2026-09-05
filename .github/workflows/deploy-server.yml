@@ -115,7 +115,17 @@ jobs:
           fi
 
           NEW="$IMAGE:$TAG"
-          OLD=$(sed -n 's/^KVIZ_IMAGE=//p' .env | head -1)
+
+          # Значение из .env читаем с обрезкой: пробел в конце строки не виден
+          # глазом, но делает значение мусором. У NGINX_CONF такой пробел уже
+          # был и уронил другой скрипт — здесь он сломал бы откат.
+          env_value() {
+            sed -n "s/^[[:space:]]*$1[[:space:]]*=//p" .env 2>/dev/null \
+              | head -1 | tr -d '\r' \
+              | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+                    -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
+          }
+          OLD=$(env_value KVIZ_IMAGE)
           echo "Было: ${OLD:-нет}"
           echo "Станет: $NEW"
 
@@ -123,11 +133,11 @@ jobs:
           # сайта (IMAGE / PREV_IMAGE). Прежний остаётся для отката.
           set_key() {
             local key="$1" val="$2"
-            if grep -q "^$key=" .env; then
+            if grep -q "^[[:space:]]*$key[[:space:]]*=" .env; then
               # Правка на месте, без sed -i: .env читается compose'ом,
               # и менять инод файла незачем.
               local tmp; tmp=$(mktemp)
-              grep -v "^$key=" .env > "$tmp"
+              grep -v "^[[:space:]]*$key[[:space:]]*=" .env > "$tmp"
               printf '%s=%s\n' "$key" "$val" >> "$tmp"
               cat "$tmp" > .env
               rm -f "$tmp"
