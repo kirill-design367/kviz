@@ -4,7 +4,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { QUESTIONS, TOTAL_STEPS, isComplete, type Answers } from '@/lib/quiz';
 import { calculatePrice } from '@/lib/pricing';
 import { GOALS, reachGoal } from '@/lib/metrika';
-import { clearState, loadState, saveState } from '@/lib/storage';
 import { Progress } from './Progress';
 import { QuestionScreen } from './QuestionScreen';
 import { PriceResult } from './PriceResult';
@@ -15,9 +14,6 @@ import { Wordmark } from './Wordmark';
 export type QuizView = 'questions' | 'result' | 'success';
 
 type Props = {
-  initialStep: number;
-  initialAnswers: Answers;
-  initialView: QuizView;
   reducedMotion: boolean;
   onClose: () => void;
 };
@@ -44,10 +40,10 @@ function depthTravel() {
   return narrow ? { out: 120, in: 150, tilt: 6 } : { out: 240, in: 300, tilt: 10 };
 }
 
-export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, onClose }: Props) {
-  const [answers, setAnswers] = useState<Answers>(initialAnswers);
-  const [step, setStep] = useState(initialStep);
-  const [view, setView] = useState<QuizView>(initialView);
+export function Quiz({ reducedMotion, onClose }: Props) {
+  const [answers, setAnswers] = useState<Answers>({});
+  const [step, setStep] = useState(0);
+  const [view, setView] = useState<QuizView>('questions');
   const [channel] = useState('telegram');
 
   const card = useRef<HTMLDivElement>(null);
@@ -56,12 +52,6 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
 
   const question = QUESTIONS[Math.min(step, TOTAL_STEPS - 1)];
   const price = calculatePrice(answers);
-
-  // --- сохранение ------------------------------------------------------- //
-
-  useEffect(() => {
-    saveState({ step, answers, finished: view !== 'questions' });
-  }, [step, answers, view]);
 
   // --- цель «показана вилка» -------------------------------------------- //
 
@@ -226,22 +216,27 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
 
   return (
     <div
-      className={`fixed inset-0 z-50 overflow-y-auto ${inverted ? 'inverted' : 'bg-paper'}`}
+      className={`overlay-in tone fixed inset-0 z-50 overflow-y-auto bg-paper ${
+        inverted ? 'inverted' : ''
+      }`}
       role="dialog"
       aria-modal="true"
       aria-label="Расчёт стоимости сайта"
     >
-      <div className="shell flex min-h-full flex-col py-5 md:py-7">
+      {/* Чернильный фон экрана с вилкой проявляется, а не включается щелчком. */}
+      <span aria-hidden className="ink-veil" data-on={inverted ? '1' : '0'} />
+
+      <div className="shell relative z-10 flex min-h-full flex-col py-5 md:py-7">
         <header className="flex items-center justify-between">
           <Wordmark className={inverted ? 'text-on-ink' : ''} />
           <button
             type="button"
-            onClick={view === 'success' ? onClose : back}
+            onClick={view === 'questions' ? onClose : view === 'success' ? onClose : back}
             className={`-mr-2 rounded-full px-3 py-2 text-[0.9rem] transition-opacity duration-200 hover:opacity-70 ${
               inverted ? 'text-on-ink-soft' : 'text-ink-faint'
             }`}
           >
-            {view === 'success' ? 'Закрыть' : step === 0 && view === 'questions' ? 'Выйти' : 'Назад'}
+            {view === 'result' ? 'Назад' : view === 'success' ? 'Закрыть' : 'Выйти'}
           </button>
         </header>
 
@@ -279,10 +274,7 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
                 <LeadForm
                   answers={answers}
                   price={price}
-                  onSent={() => {
-                    setView('success');
-                    clearState();
-                  }}
+                  onSent={() => setView('success')}
                 />
               </div>
             </div>
@@ -291,18 +283,30 @@ export function Quiz({ initialStep, initialAnswers, initialView, reducedMotion, 
           {view === 'success' ? <Success channel={channel} reducedMotion={reducedMotion} /> : null}
         </main>
 
-        <footer
-          className={`pb-2 text-[0.8rem] ${inverted ? 'text-on-ink-soft' : 'text-ink-faint'}`}
-        >
-          {view === 'questions' ? 'Можно вернуться назад и поменять ответ' : null}
+        <footer className="pb-2">
+          {view === 'questions' ? (
+            <div className="flex flex-col items-start gap-2">
+              <span id="back-hint" className="text-[0.8rem] text-ink-faint">
+                Можно вернуться и поменять ответ
+              </span>
+              <button
+                type="button"
+                onClick={back}
+                aria-describedby="back-hint"
+                aria-label={
+                  step === 0 ? 'Вернуться на первый экран' : 'Вернуться к предыдущему вопросу'
+                }
+                className="back-arrow grid h-11 w-11 place-items-center rounded-full border border-line text-ink-soft"
+              >
+                <span aria-hidden className="text-[1.1rem] leading-none">
+                  ←
+                </span>
+              </button>
+            </div>
+          ) : null}
         </footer>
       </div>
     </div>
   );
 }
 
-/** Читает сохранённое состояние один раз при монтировании страницы. */
-export function useSavedQuiz() {
-  const [saved] = useState(() => loadState());
-  return saved;
-}

@@ -1,7 +1,7 @@
 import { chromium, devices } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
-const BASE = process.env.SHOT_BASE ?? 'http://127.0.0.1:4173';
+const BASE = process.env.SHOT_BASE ?? 'http://127.0.0.1:4302/kviz/';
 const OUT = 'docs/screens';
 mkdirSync(OUT, { recursive: true });
 

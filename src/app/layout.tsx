@@ -32,10 +32,47 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
+/**
+ * Объявления шрифтов собираются здесь, а не в таблице стилей.
+ *
+ * Сайт живёт по адресу с префиксом (`/kviz`), а `url()` внутри статического
+ * CSS считается от корня домена — путь `/fonts/...` уводил в 404, шрифты
+ * не приезжали и всё рисовалось подменными. Здесь префикс известен и
+ * подставляется явно, поэтому адрес верен при любом basePath и на любой
+ * странице.
+ */
+const FONT_FACES = `
+@font-face {
+  font-family: 'Onest';
+  src: url('${BASE}/fonts/onest-var.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0400-045F, U+0490-0491, U+2010-2026, U+2116, U+20BD, U+2212;
+}
+@font-face {
+  font-family: 'Anticva';
+  src: url('${BASE}/fonts/anticva.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0400-045F, U+0490-0491, U+2116;
+}
+@font-face {
+  font-family: 'Cormorant';
+  src: url('${BASE}/fonts/cormorant-var.woff2') format('woff2-variations');
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0400-045F, U+0490-0491, U+2010-2026, U+2116, U+20BD, U+2212;
+}
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ru">
       <head>
+        <style dangerouslySetInnerHTML={{ __html: FONT_FACES }} />
         <link
           rel="preload"
           href={`${BASE}/fonts/onest-var.woff2`}

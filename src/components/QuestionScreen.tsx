@@ -98,7 +98,7 @@ export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function Questio
                       data-selected={active ? '1' : '0'}
                       tabIndex={active || (!selected && index === 0) ? 0 : -1}
                       onClick={() => onSelect(option.id)}
-                      className={`option3d group relative flex w-full items-center gap-4 px-4 py-[0.95rem] text-left md:py-[1.05rem] ${
+                      className={`option3d group relative flex w-full items-center gap-3 px-3.5 py-[0.95rem] text-left md:gap-4 md:px-4 md:py-[1.05rem] ${
                         active ? 'text-ink' : 'text-ink-soft hover:text-ink'
                       }`}
                     >
@@ -106,14 +106,14 @@ export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function Questio
 
                       <span
                         aria-hidden
-                        className={`figure relative w-5 shrink-0 text-[0.85rem] tabular-nums ${
+                        className={`figure relative w-4 shrink-0 text-[0.85rem] tabular-nums md:w-5 ${
                           active ? 'text-ink' : 'text-ink-faint'
                         }`}
                       >
                         {index + 1}
                       </span>
 
-                      <span className="relative flex-1 text-[1.05rem] leading-[1.35] md:text-[1.15rem]">
+                      <span className="relative flex-1 text-[1rem] leading-[1.3] xs:text-[1.05rem] md:text-[1.15rem]">
                         {option.label}
                       </span>
 

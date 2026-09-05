@@ -20,27 +20,69 @@ const out = [];
   await ctx.close();
 }
 
-// 2. Ответы переживают обновление страницы
+// 2. При любой загрузке страница открывается с первого экрана
 {
   const ctx = await browser.newContext({ ...devices['iPhone 13'], locale: 'ru-RU' });
   const page = await ctx.newPage();
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: /Рассчитать стоимость/ }).click();
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(700);
   for (let i = 0; i < 3; i++) {
     await page.locator('[role="dialog"] ul li button').nth(1).click();
     await page.waitForTimeout(780);
   }
   const before = await page.locator('[role="dialog"] h2').innerText();
+
+  // Перезагрузка посреди квиза
   await page.reload({ waitUntil: 'networkidle' });
   await page.waitForTimeout(900);
-  const after = await page.locator('[role="dialog"] h2').innerText().catch(() => 'квиз не открылся');
-  // возврат назад
-  await page.getByRole('button', { name: 'Назад' }).click();
-  await page.waitForTimeout(600);
-  const back = await page.locator('[role="dialog"] h2').innerText();
+  const dialogAfterReload = await page.locator('[role="dialog"]').count();
+  const heroAfterReload = await page.getByRole('button', { name: /Рассчитать стоимость/ }).isVisible();
+
+  // Полное прохождение с отправкой, затем новый заход
+  await page.getByRole('button', { name: /Рассчитать стоимость/ }).click();
+  await page.waitForTimeout(700);
+  for (let i = 0; i < 7; i++) {
+    await page.locator('[role="dialog"] ul li button').nth(0).click();
+    await page.waitForTimeout(780);
+  }
+  await page.waitForTimeout(800);
+  await page.fill('#name', 'Кирилл');
+  await page.fill('#phone', '9995554433');
+  await page.getByRole('button', { name: 'Отправить' }).click();
+  await page.waitForTimeout(1800);
+  const sent = await page.getByText('Спасибо, записал').isVisible().catch(() => false);
+
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(900);
+  const dialogAfterSubmit = await page.locator('[role="dialog"]').count();
+  const heroAfterSubmit = await page.getByRole('button', { name: /Рассчитать стоимость/ }).isVisible();
+  const stored = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('aurea-kviz-v')));
+
+  // Возврат назад по стрелке
+  await page.getByRole('button', { name: /Рассчитать стоимость/ }).click();
+  await page.waitForTimeout(700);
+  await page.locator('[role="dialog"] ul li button').nth(1).click();
+  await page.waitForTimeout(780);
+  const q2 = await page.locator('[role="dialog"] h2').innerText();
+  await page.getByRole('button', { name: /Вернуться к предыдущему вопросу/ }).click();
+  await page.waitForTimeout(780);
+  const backTo = await page.locator('[role="dialog"] h2').innerText();
   const marked = await page.locator('[role="dialog"] button[aria-checked="true"]').count();
-  out.push({ проверка: 'состояние после reload', 'до перезагрузки': before, 'после': after, 'совпало': before === after, 'после Назад': back, 'ответ отмечен': marked });
+
+  out.push({
+    проверка: 'загрузка всегда с первого экрана',
+    'был на вопросе': before,
+    'после перезагрузки квиз закрыт': dialogAfterReload === 0,
+    'после перезагрузки виден первый экран': heroAfterReload,
+    'форма отправилась': sent,
+    'после отправки и нового захода квиз закрыт': dialogAfterSubmit === 0,
+    'после отправки виден первый экран': heroAfterSubmit,
+    'ключи прохождения в хранилище': stored,
+    'стрелка вернула с': q2,
+    'на': backTo,
+    'ответ отмечен': marked,
+  });
   await ctx.close();
 }
 

@@ -1,5 +1,5 @@
 import { chromium, devices } from 'playwright';
-const BASE = process.env.SHOT_BASE ?? 'http://127.0.0.1:4205';
+const BASE = process.env.SHOT_BASE ?? 'http://127.0.0.1:4302/kviz/';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const out = [];
 

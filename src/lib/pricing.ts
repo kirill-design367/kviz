@@ -37,13 +37,16 @@ export type PriceRange = {
   caveat: string | null;
 };
 
-/** Ориентиры «от» из брифа. Низ вилки никогда не опускается ниже. */
+/**
+ * Ориентиры «от». Низ вилки никогда не опускается ниже.
+ * Уровень цен вдвое ниже прежнего — так решил заказчик.
+ */
 const FLOOR = {
-  landing: 100_000,
-  upto5: 150_000,
-  more5: 250_000,
-  shop: 300_000,
-  redesign: 80_000,
+  landing: 50_000,
+  upto5: 75_000,
+  more5: 125_000,
+  shop: 150_000,
+  redesign: 40_000,
 } as const;
 
 type Task = 'new' | 'redesign' | 'shop' | 'unsure';
@@ -61,12 +64,12 @@ const BASE: Record<Exclude<Task, 'unsure'>, Record<Exclude<Pages, 'unknown'>, nu
     // Число страниц тут почти ничего не решает, и дешевле ориентира он не бывает.
     one: FLOOR.shop,
     upto5: FLOOR.shop,
-    more5: 380_000,
+    more5: 190_000,
   },
   redesign: {
     one: FLOOR.redesign,
-    upto5: 120_000,
-    more5: 190_000,
+    upto5: 60_000,
+    more5: 95_000,
   },
 };
 
@@ -92,12 +95,6 @@ const BUDGET_CEILING: Record<string, number | null> = {
   discuss: null,
 };
 
-const BUDGET_LABEL: Record<string, string> = {
-  lt50: 'до 50 000 ₽',
-  '50-150': '50–150 000 ₽',
-  '150-300': '150–300 000 ₽',
-};
-
 /**
  * Насколько вилка идёт навстречу названному бюджету.
  *
@@ -109,9 +106,6 @@ const BUDGET_LABEL: Record<string, string> = {
  * больше за ту же работу человек не должен только потому, что может.
  */
 const BUDGET_PULL = 0.5;
-
-/** Насколько низ вилки должен превысить бюджет, чтобы об этом стоило сказать вслух. */
-const BUDGET_GAP_NOTE = 1.15;
 
 /** Приоритет: [множитель низа, множитель верха]. Низ никогда не меньше 1. */
 const PRIORITY: Record<string, { low: number; high: number; note: string }> = {
@@ -132,7 +126,9 @@ const PRIORITY: Record<string, { low: number; high: number; note: string }> = {
  */
 const MIN_SPREAD = 1.35;
 const MAX_SPREAD_BY_UNCERTAINTY = [2.2, 2.5, 2.8];
-const STEP = 10_000;
+/* Шаг округления. Вдвое мельче прежнего: суммы стали вдвое меньше,
+   и десятитысячный шаг съедал бы разницу между вариантами. */
+const STEP = 5_000;
 
 const TASK_LABEL: Record<string, string> = {
   new: 'Сайт с нуля',
@@ -189,11 +185,8 @@ export function calculatePrice(answers: Answers): PriceRange {
   if (low < bases.low) low = bases.low;
 
   // Названный бюджет тянет вилку к себе, но только вниз и только наполовину.
-  const budget = answers.budget ?? '';
-  const ceiling = BUDGET_CEILING[budget] ?? null;
-  let pulledToBudget = false;
+  const ceiling = BUDGET_CEILING[answers.budget ?? ''] ?? null;
   if (ceiling !== null && ceiling < low) {
-    pulledToBudget = true;
     low = Math.max(bases.low, roundTo(low + (ceiling - low) * BUDGET_PULL));
     high = ceilTo(high + (ceiling - high) * BUDGET_PULL);
   }
@@ -204,20 +197,11 @@ export function calculatePrice(answers: Answers): PriceRange {
   if (high < low * MIN_SPREAD) high = ceilTo(low * MIN_SPREAD);
   if (high > low * maxSpread) high = floorTo(low * maxSpread);
 
-  // Если после сближения низ всё равно заметно выше названной суммы —
-  // об этом говорится прямо, а не заминается.
-  const budgetNote =
-    pulledToBudget && ceiling !== null && low > ceiling * BUDGET_GAP_NOTE
-      ? `Вы указали бюджет ${BUDGET_LABEL[budget]}. Ниже ${formatMoney(low)} ₽ за эту задачу я не берусь — иначе получится не то, за что можно ручаться. Если сумма принципиальна, обсудим, что реально сделать в неё.`
-      : null;
-
   return {
     low,
     high,
     uncertain,
-    // Про бюджет говорим в первую очередь: это конкретное расхождение,
-    // а не общее предупреждение о неточности.
-    caveat: budgetNote ?? caveatFor(task, pages, high),
+    caveat: caveatFor(task, pages, high),
     factors: [
       { label: 'Задача', value: TASK_LABEL[task] ?? '—' },
       { label: 'Объём', value: volumeLabel(task, pages) },
@@ -233,7 +217,7 @@ export function calculatePrice(answers: Answers): PriceRange {
  */
 function caveatFor(task: Task, pages: Pages, high: number): string | null {
   if (task === 'unsure' && high < FLOOR.shop) {
-    return 'Считал по самому частому случаю — обычный сайт. Если задача окажется интернет-магазином, вилка начинается от 300 000 ₽.';
+    return 'Считал по самому частому случаю — обычный сайт. Если задача окажется интернет-магазином, вилка начинается от 150 000 ₽.';
   }
   if (task === 'unsure') {
     return 'Задачу вы пока не выбрали, поэтому вилка широкая: она покрывает и обычный сайт, и интернет-магазин. Определитесь — и я назову диапазон уже.';

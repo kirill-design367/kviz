@@ -70,10 +70,10 @@ test('бюджет ниже вилки подтягивает её вниз', ()
 
 test('бюджет не опускает низ ниже ориентира студии', () => {
   const floors: Record<string, Record<string, number>> = {
-    new: { one: 100_000, upto5: 150_000, more5: 250_000, unknown: 150_000 },
-    shop: { one: 300_000, upto5: 300_000, more5: 300_000, unknown: 300_000 },
-    redesign: { one: 80_000, upto5: 80_000, more5: 80_000, unknown: 80_000 },
-    unsure: { one: 100_000, upto5: 150_000, more5: 250_000, unknown: 100_000 },
+    new: { one: 50_000, upto5: 75_000, more5: 125_000, unknown: 75_000 },
+    shop: { one: 150_000, upto5: 150_000, more5: 150_000, unknown: 150_000 },
+    redesign: { one: 40_000, upto5: 40_000, more5: 40_000, unknown: 40_000 },
+    unsure: { one: 50_000, upto5: 75_000, more5: 125_000, unknown: 50_000 },
   };
   for (const c of all())
     for (const budget of BUDGETS) {
@@ -94,24 +94,12 @@ test('вилка сближается с бюджетом, а не подстр�
   assert.ok(tight.low > 50_000, 'низ опустился до названной суммы — это подстройка, а не оценка');
 });
 
-test('когда вилка всё равно выше бюджета — об этом сказано', () => {
-  for (const c of all()) {
-    const r = price(c.task, c.pages, c.priority, 'lt50');
-    if (r.low > 50_000 * 1.15) {
-      assert.ok(
-        r.caveat && r.caveat.includes('50 000'),
-        `${JSON.stringify(c)}: вилка от ${r.low} при бюджете до 50 000, а оговорки нет`,
-      );
-    }
-  }
-});
-
 test('низ вилки не опускается ниже ориентиров студии', () => {
   const floors: Record<string, Record<string, number>> = {
-    new: { one: 100_000, upto5: 150_000, more5: 250_000, unknown: 150_000 },
-    shop: { one: 300_000, upto5: 300_000, more5: 300_000, unknown: 300_000 },
-    redesign: { one: 80_000, upto5: 80_000, more5: 80_000, unknown: 80_000 },
-    unsure: { one: 100_000, upto5: 150_000, more5: 250_000, unknown: 100_000 },
+    new: { one: 50_000, upto5: 75_000, more5: 125_000, unknown: 75_000 },
+    shop: { one: 150_000, upto5: 150_000, more5: 150_000, unknown: 150_000 },
+    redesign: { one: 40_000, upto5: 40_000, more5: 40_000, unknown: 40_000 },
+    unsure: { one: 50_000, upto5: 75_000, more5: 125_000, unknown: 50_000 },
   };
   for (const c of all()) {
     const r = price(c.task, c.pages, c.priority);
@@ -216,6 +204,27 @@ test('«пока не определился» не дешевле самого 
     }
 });
 
+test('текста про названный бюджет на экране нет ни при каких ответах', () => {
+  for (const c of all())
+    for (const budget of BUDGETS) {
+      const r = price(c.task, c.pages, c.priority, budget);
+      if (!r.caveat) continue;
+      assert.ok(
+        !/указали бюджет|не берусь/.test(r.caveat),
+        `${JSON.stringify(c)} + ${budget}: в оговорке осталась речь о бюджете — «${r.caveat}»`,
+      );
+    }
+});
+
+test('уровень цен вдвое ниже прежнего', () => {
+  // Ориентиры были 100 000 / 150 000 / 250 000 / 300 000 / 80 000.
+  assert.equal(price('new', 'one', 'speed').low, 50_000);
+  assert.equal(price('new', 'upto5', 'speed').low, 75_000);
+  assert.equal(price('new', 'more5', 'speed').low, 125_000);
+  assert.equal(price('shop', 'one', 'speed').low, 150_000);
+  assert.equal(price('redesign', 'one', 'speed').low, 40_000);
+});
+
 test('у неопределённых ответов всегда есть оговорка, у точных — нет', () => {
   for (const c of all()) {
     const r = price(c.task, c.pages, c.priority);
@@ -231,9 +240,9 @@ test('если магазин не влезает в вилку неопреде
   for (const pages of PAGES)
     for (const priority of PRIORITY) {
       const vague = price('unsure', pages, priority);
-      if (vague.high < 300_000) {
+      if (vague.high < 150_000) {
         assert.ok(
-          vague.caveat?.includes('300 000'),
+          vague.caveat?.includes('150 000'),
           `${pages}/${priority}: вилка до ${vague.high}, а про порог магазина не сказано`,
         );
       }
@@ -247,11 +256,11 @@ test('список неопределённых ответов соответс�
   assert.deepEqual(price('unsure', 'unknown', 'design').uncertain, ['задача', 'объём']);
 });
 
-test('всё кратно 10 000 — цифра читается как оценка, а не как смета', () => {
+test('всё кратно 5 000 — цифра читается как оценка, а не как смета', () => {
   for (const c of all()) {
     const r = price(c.task, c.pages, c.priority);
-    assert.equal(r.low % 10_000, 0, `низ ${r.low} не кратен 10 000`);
-    assert.equal(r.high % 10_000, 0, `верх ${r.high} не кратен 10 000`);
+    assert.equal(r.low % 5_000, 0, `низ ${r.low} не кратен 5 000`);
+    assert.equal(r.high % 5_000, 0, `верх ${r.high} не кратен 5 000`);
   }
 });
 
@@ -259,7 +268,7 @@ test('неполные ответы не ломают расчёт', () => {
   const r = calculatePrice({});
   assert.ok(r.low > 0 && r.high > r.low);
   const partial = calculatePrice({ task: 'shop' });
-  assert.ok(partial.low >= 300_000, 'магазин без остальных ответов должен быть от 300 000');
+  assert.ok(partial.low >= 150_000, 'магазин без остальных ответов должен быть от 150 000');
 });
 
 test('в квизе ровно семь вопросов и у каждого есть варианты', () => {

@@ -1,65 +1,31 @@
 import type { Answers } from './quiz';
 
 /**
- * Ответы переживают обновление страницы. Схема версионируется:
- * если вопросы поменяются, старое состояние молча отбрасывается,
- * а не подсовывает несуществующие варианты.
+ * Квиз намеренно НЕ помнит прохождение между загрузками страницы.
+ *
+ * Раньше ответы восстанавливались из localStorage, и это давало две беды.
+ * Во-первых, человек, однажды заполнивший форму, при следующем заходе попадал
+ * сразу на экран с вилкой, а не на оффер. Во-вторых, после отправки состояние
+ * очищалось, но эффект сохранения тут же срабатывал на смену экрана и писал
+ * его обратно — с отметкой «пройдено». В итоге сайт навсегда открывался
+ * не с начала.
+ *
+ * Теперь при любой загрузке страница открывается с первого экрана.
  */
 
-const KEY = 'aurea-kviz-v1';
-const SCHEMA = 1;
+/** Ключ, под которым прохождение хранилось раньше. Чистим, чтобы не мешался. */
+const LEGACY_KEY = 'aurea-kviz-v1';
 
-export type SavedState = {
-  schema: number;
-  step: number;
-  answers: Answers;
-  /** Дошёл ли человек до экрана с вилкой. */
-  finished: boolean;
-  updatedAt: number;
-};
-
-const EMPTY: SavedState = { schema: SCHEMA, step: 0, answers: {}, finished: false, updatedAt: 0 };
-
-export function loadState(): SavedState {
-  if (typeof window === 'undefined') return EMPTY;
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    if (!raw) return EMPTY;
-    const parsed = JSON.parse(raw) as Partial<SavedState>;
-    if (parsed.schema !== SCHEMA || typeof parsed.answers !== 'object' || !parsed.answers) return EMPTY;
-    return {
-      schema: SCHEMA,
-      step: typeof parsed.step === 'number' ? parsed.step : 0,
-      answers: parsed.answers as Answers,
-      finished: Boolean(parsed.finished),
-      updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : 0,
-    };
-  } catch {
-    // Приватный режим, переполненное хранилище, битый JSON — ведём себя как будто пусто.
-    return EMPTY;
-  }
-}
-
-export function saveState(state: Omit<SavedState, 'schema' | 'updatedAt'>): void {
+export function clearLegacyState(): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(
-      KEY,
-      JSON.stringify({ ...state, schema: SCHEMA, updatedAt: Date.now() }),
-    );
+    window.localStorage.removeItem(LEGACY_KEY);
   } catch {
-    // Не смогли сохранить — не повод ломать квиз.
+    /* приватный режим — и не надо */
   }
 }
 
-export function clearState(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.removeItem(KEY);
-  } catch {
-    /* пусто */
-  }
-}
+export type { Answers };
 
 /** Метки Директа и источник перехода — уходят в заявку вместе с ответами. */
 export type Source = Record<string, string>;

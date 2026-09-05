@@ -49,7 +49,7 @@ export function PriceResult({ price, reducedMotion }: Props) {
         data-appear
         className="text-[0.78rem] uppercase tracking-[0.16em] text-on-ink-soft"
       >
-        Вилка по вашим ответам
+        Ориентировочная стоимость
       </p>
 
       <p
