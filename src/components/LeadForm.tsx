@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { looksLikePhone, phoneAsTyped } from '@/lib/phone';
+import { looksLikeTelegram, telegramAsTyped } from '@/lib/telegram';
 import { GOALS, reachGoal } from '@/lib/metrika';
 import { readSource } from '@/lib/storage';
 import { readableAnswers, type Answers } from '@/lib/quiz';
@@ -27,20 +28,29 @@ const CHANNELS: { id: Channel; label: string }[] = [
 export function LeadForm({ answers, price, onSent }: Props) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  // Ник хранится отдельно от телефона: человек может переключить способ
+  // связи туда и обратно, и напечатанное не должно теряться.
+  const [nick, setNick] = useState('');
   // По умолчанию звонок: обещание перезвонить за семь минут — основной путь.
   const [channel, setChannel] = useState<Channel>('call');
   const [status, setStatus] = useState<Status>('idle');
-  const [errors, setErrors] = useState<{ name?: string; phone?: string; form?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string; contact?: string; form?: string }>({});
   const [touched, setTouched] = useState(false);
   /** Защёлка от повторной отправки: состояние React обновляется асинхронно,
       а второй тап по кнопке может прийти в том же кадре. */
   const busy = useRef(false);
   const honeypot = useRef<HTMLInputElement>(null);
 
+  const wantsTelegram = channel === 'telegram';
+
   const validate = () => {
     const next: typeof errors = {};
     if (name.trim().length < 2) next.name = 'Напишите, как к вам обращаться';
-    if (!looksLikePhone(phone)) next.phone = 'Это не похоже на номер телефона';
+    if (wantsTelegram) {
+      if (!looksLikeTelegram(nick)) next.contact = 'Это не похоже на ник в Telegram';
+    } else if (!looksLikePhone(phone)) {
+      next.contact = 'Это не похоже на номер телефона';
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -57,9 +67,12 @@ export function LeadForm({ answers, price, onSent }: Props) {
 
     const payload = {
       name: name.trim(),
-      // Уходит ровно то, что человек напечатал.
-      phone: phoneAsTyped(phone),
       channel,
+      // Уходит ровно то, что человек напечатал, — и только то поле,
+      // которое он на самом деле заполнял.
+      ...(wantsTelegram
+        ? { telegram: telegramAsTyped(nick) }
+        : { phone: phoneAsTyped(phone) }),
       company: honeypot.current?.value ?? '',
       answers: readableAnswers(answers),
       price: { low: price.low, high: price.high },
@@ -110,18 +123,37 @@ export function LeadForm({ answers, price, onSent }: Props) {
           disabled={sending}
         />
 
-        <Field
-          id="phone"
-          label="Телефон"
-          error={touched ? errors.phone : undefined}
-          value={phone}
-          onChange={setPhone}
-          autoComplete="tel"
-          inputMode="tel"
-          type="tel"
-          placeholder="Как вам удобно"
-          disabled={sending}
-        />
+        {/* Поле подстраивается под выбранный способ связи: у звонка —
+            телефон, у Telegram — ник. Спрашивать телефон у того, кто
+            попросил написать в Telegram, незачем. */}
+        {wantsTelegram ? (
+          <Field
+            key="telegram"
+            id="telegram"
+            label="Ник в Telegram"
+            error={touched ? errors.contact : undefined}
+            value={nick}
+            onChange={setNick}
+            autoComplete="off"
+            inputMode="text"
+            placeholder="@username"
+            disabled={sending}
+          />
+        ) : (
+          <Field
+            key="phone"
+            id="phone"
+            label="Телефон"
+            error={touched ? errors.contact : undefined}
+            value={phone}
+            onChange={setPhone}
+            autoComplete="tel"
+            inputMode="tel"
+            type="tel"
+            placeholder="Как вам удобно"
+            disabled={sending}
+          />
+        )}
 
         <fieldset>
           {/* Строка про звонок и Telegram стоит выше — над всей формой,
@@ -137,22 +169,27 @@ export function LeadForm({ answers, price, onSent }: Props) {
                   type="button"
                   disabled={sending}
                   aria-pressed={active}
-                  onClick={() => setChannel(item.id)}
+                  onClick={() => {
+                    setChannel(item.id);
+                    // Ошибка от прошлого способа связи к новому полю
+                    // отношения не имеет.
+                    setErrors((prev) => ({ ...prev, contact: undefined }));
+                  }}
                   className={`press relative flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-full border px-5 text-[1rem] font-medium lg:min-h-[58px] lg:text-[1.05rem] ${
                     active
-                      ? 'border-on-ink bg-on-ink/15 text-on-ink'
-                      : 'border-on-ink-soft/45 text-on-ink-soft hover:border-on-ink-soft hover:bg-on-ink/[0.07] hover:text-on-ink'
+                      ? 'border-ink bg-[color:var(--selected-fill)] text-ink'
+                      : 'border-line text-ink-soft hover:border-ink hover:bg-[color:var(--hover-fill)] hover:text-ink'
                   }`}
                 >
                   <span
                     aria-hidden
                     className={`grid h-[17px] w-[17px] shrink-0 place-items-center rounded-full border transition-colors duration-150 ${
-                      active ? 'border-on-ink' : 'border-on-ink-soft/70'
+                      active ? 'border-ink' : 'border-line'
                     }`}
                   >
                     <span
-                      className={`h-[7px] w-[7px] rounded-full transition-transform duration-200 ease-aurea ${
-                        active ? 'scale-100 bg-on-ink' : 'scale-0 bg-on-ink'
+                      className={`h-[7px] w-[7px] rounded-full bg-ink transition-transform duration-200 ease-aurea ${
+                        active ? 'scale-100' : 'scale-0'
                       }`}
                     />
                   </span>
@@ -176,7 +213,7 @@ export function LeadForm({ answers, price, onSent }: Props) {
       />
 
       {errors.form ? (
-        <p role="alert" className="mt-6 text-[0.92rem] text-gold-soft">
+        <p role="alert" className="mt-6 text-[0.92rem] text-error">
           {errors.form}
         </p>
       ) : null}
@@ -184,23 +221,22 @@ export function LeadForm({ answers, price, onSent }: Props) {
       <button
         type="submit"
         disabled={sending || status === 'sent'}
-        className="btn btn--on-ink mt-4 inline-flex w-full items-center justify-center rounded-full bg-on-ink px-8 py-[0.95rem] text-[1.02rem] font-medium text-ink disabled:cursor-not-allowed disabled:opacity-70 lg:mt-5 lg:py-[1.1rem] lg:text-[1.08rem]"
+        className="btn mt-4 inline-flex w-full items-center justify-center rounded-full bg-ink px-8 py-[0.95rem] text-[1.02rem] font-medium text-on-ink disabled:cursor-not-allowed disabled:opacity-70 lg:mt-5 lg:py-[1.1rem] lg:text-[1.08rem]"
       >
         {sending ? 'Отправляю…' : 'Отправить'}
       </button>
 
-      <p className="mt-2.5 text-[0.78rem] leading-snug text-on-ink-soft/85">
+      <p className="mt-2.5 text-[0.78rem] leading-snug text-ink-faint">
         Отправляя форму, вы соглашаетесь на{' '}
         <Link
           href="/privacy"
           target="_blank"
-          className="underline decoration-on-ink-soft/50 underline-offset-4 transition-colors hover:decoration-on-ink"
+          className="underline decoration-line underline-offset-4 transition-colors hover:decoration-ink"
         >
           обработку персональных данных
         </Link>
         .
       </p>
-
     </form>
   );
 }
@@ -232,10 +268,7 @@ function Field({
 }: FieldProps) {
   return (
     <div>
-      <label
-        htmlFor={id}
-        className="block text-[0.78rem] uppercase tracking-[0.14em] text-on-ink-soft"
-      >
+      <label htmlFor={id} className="block text-[0.78rem] uppercase tracking-[0.14em] text-ink-faint">
         {label}
       </label>
       <input
@@ -250,12 +283,12 @@ function Field({
         aria-invalid={Boolean(error)}
         aria-describedby={error ? `${id}-error` : undefined}
         onChange={(event) => onChange(event.target.value)}
-        className={`mt-1.5 w-full border-b bg-transparent pb-2.5 pt-1 text-[1.05rem] outline-none lg:pb-3 lg:text-[1.12rem] transition-colors duration-200 placeholder:text-on-ink-soft/60 disabled:opacity-60 ${
-          error ? 'border-gold-soft' : 'border-on-ink-soft/40 focus:border-on-ink'
+        className={`mt-1.5 w-full border-b bg-transparent pb-2.5 pt-1 text-[1.05rem] outline-none transition-colors duration-200 placeholder:text-ink-faint/60 disabled:opacity-60 lg:pb-3 lg:text-[1.12rem] ${
+          error ? 'border-error' : 'border-line focus:border-ink'
         }`}
       />
       {error ? (
-        <p id={`${id}-error`} role="alert" className="mt-2 text-[0.85rem] text-gold-soft">
+        <p id={`${id}-error`} role="alert" className="mt-2 text-[0.85rem] text-error">
           {error}
         </p>
       ) : null}

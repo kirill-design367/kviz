@@ -19,9 +19,9 @@ const flat = await page.evaluate(() => {
   };
 });
 // Смена вопроса при выключенном движении должна быть мгновенной и не ломаться
-const before = await page.locator('[role="dialog"] h2').innerText();
+const before = await page.locator('[role="dialog"] h2').first().innerText();
 await page.locator('[role="dialog"] ul li button').nth(0).click();
 await page.waitForTimeout(350);
-const after = await page.locator('[role="dialog"] h2').innerText();
+const after = await page.locator('[role="dialog"] h2').first().innerText();
 console.log(JSON.stringify({ ...flat, 'вопрос до': before, 'вопрос после': after, 'переход сработал': before !== after }, null, 1));
 await b.close();

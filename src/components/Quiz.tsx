@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { visibleQuestions, isComplete, type Answers } from '@/lib/quiz';
+import { QUESTIONS, visibleQuestions, isComplete, type Answers } from '@/lib/quiz';
 import { calculatePrice } from '@/lib/pricing';
 import { GOALS, reachGoal } from '@/lib/metrika';
 import { Progress } from './Progress';
@@ -232,32 +232,23 @@ export function Quiz({ reducedMotion, onClose }: Props) {
     };
   }, []);
 
-  const inverted = view !== 'questions';
-
   return (
     <div
-      className={`overlay-in tone fixed inset-0 z-50 overflow-y-auto bg-paper ${
-        inverted ? 'inverted' : ''
-      }`}
+      className="overlay-in fixed inset-0 z-50 overflow-y-auto bg-paper"
       role="dialog"
       aria-modal="true"
       aria-label="Расчёт стоимости сайта"
     >
-      {/* Чернильный фон экрана с вилкой проявляется, а не включается щелчком. */}
-      <span aria-hidden className="ink-veil" data-on={inverted ? '1' : '0'} />
-
       <div className="shell relative z-10 flex min-h-full flex-col py-4 md:py-6">
         <header className="flex items-center justify-between">
-          <Wordmark className={inverted ? 'text-on-ink' : ''} />
+          <Wordmark />
           {/* На экране вопроса выхода в шапке нет: единственный путь назад —
               стрелка над карточкой, и она же уводит на первый экран. */}
           {view === 'questions' ? null : (
             <button
               type="button"
               onClick={view === 'success' ? onClose : back}
-              className={`-mr-2 rounded-full px-3 py-2 text-[0.9rem] transition-opacity duration-200 hover:opacity-70 ${
-                inverted ? 'text-on-ink-soft' : 'text-ink-faint'
-              }`}
+              className="-mr-2 rounded-full px-3 py-2 text-[0.9rem] text-ink-faint transition-opacity duration-200 hover:opacity-70"
             >
               {view === 'success' ? 'Закрыть' : 'Назад'}
             </button>
@@ -280,8 +271,8 @@ export function Quiz({ reducedMotion, onClose }: Props) {
         >
           {/* Возврат стоит НАД карточкой и слева: подпись сверху, стрелка под ней. */}
           {view === 'questions' ? (
-            <div className="mx-auto mb-3 flex w-full max-w-[38rem] flex-col items-start gap-1.5 md:mb-5 md:gap-2">
-              <span id="back-hint" className="text-[0.8rem] text-ink-faint">
+            <div className="-ml-1 mb-3 flex flex-col items-start gap-1 md:mb-5">
+              <span id="back-hint" className="pl-1 text-[0.8rem] text-ink-faint">
                 Можно вернуться и поменять ответ
               </span>
               <button
@@ -291,11 +282,23 @@ export function Quiz({ reducedMotion, onClose }: Props) {
                 aria-label={
                   step === 0 ? 'Вернуться на первый экран' : 'Вернуться к предыдущему вопросу'
                 }
-                className="back-arrow grid h-11 w-11 place-items-center rounded-full border border-line text-ink-soft"
+                className="back-arrow -my-1 grid h-11 w-11 place-items-center"
               >
-                <span aria-hidden className="text-[1.1rem] leading-none">
-                  ←
-                </span>
+                {/* Стрелка нарисована линиями, а не знаком из шрифта:
+                    так толщина задаётся точно и не зависит от гарнитуры. */}
+                <svg
+                  aria-hidden
+                  viewBox="0 0 24 24"
+                  className="h-[26px] w-[26px]"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M20 12H4" />
+                  <path d="M10 6l-6 6 6 6" />
+                </svg>
               </button>
             </div>
           ) : null}
@@ -303,8 +306,9 @@ export function Quiz({ reducedMotion, onClose }: Props) {
           {view === 'questions' ? (
             <QuestionScreen
               ref={card}
-              question={question}
-              selected={answers[question.id]}
+              questions={QUESTIONS}
+              current={question}
+              answers={answers}
               onSelect={select}
               disabled={false}
               reducedMotion={reducedMotion}
@@ -319,7 +323,7 @@ export function Quiz({ reducedMotion, onClose }: Props) {
             <div className="mx-auto w-full max-w-[33rem] lg:max-w-[38rem]">
               <PriceResult price={price} reducedMotion={reducedMotion} />
 
-              <p className="mt-3 text-[0.9rem] leading-relaxed text-on-ink-soft md:mt-4 lg:text-[1rem]">
+              <p className="mt-3 text-[0.9rem] leading-relaxed text-ink-soft md:mt-4 lg:text-[1rem]">
                 Через семь минут наберу и назову точную стоимость. Если звонки
                 неудобны — напишу в Telegram, как вам лучше?
               </p>

@@ -104,13 +104,17 @@ body {
   overscroll-behavior-y: none;
 }
 
-/* Крупный кириллический набор рвётся некрасиво: балансируем строки
-   и разрешаем переносы там, где слово длиннее колонки. */
+/* Крупный кириллический набор рвётся некрасиво: балансируем строки.
+   Переносов внутри слов нет ни на каком размере экрана: «СТОИ-МОСТЬ»
+   в заголовке читается как дефект вёрстки, а не как типографика.
+   Строка ломается только между словами. */
 h1,
 h2,
 .balance {
   text-wrap: balance;
-  hyphens: auto;
+  hyphens: none;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 ::selection {
@@ -219,6 +223,15 @@ textarea {
 
 /* Карточка вопроса — настоящая поверхность, а не подсветка под текстом.
    Наклон задаётся переменными, их покадрово крутит указатель. */
+.card3d,
+.card3d-sizer {
+  border-radius: 1.1rem;
+  /* Плотнее сверху и снизу: вопрос со всеми вариантами обязан помещаться
+     в один экран телефона, листать за вариантами нельзя. */
+  padding: 1.15rem 1.15rem 1rem;
+  border: 1px solid transparent;
+}
+
 .card3d {
   position: relative;
   transform-style: preserve-3d;
@@ -227,15 +240,33 @@ textarea {
   transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
   background: var(--paper-raised);
-  border: 1px solid var(--line-soft);
-  border-radius: 1.1rem;
-  /* Плотнее сверху и снизу: вопрос со всеми вариантами обязан помещаться
-     в один экран телефона, листать за вариантами нельзя. */
-  padding: 1.15rem 1.15rem 1rem;
+  border-color: var(--line-soft);
+}
+
+/* Распорка: невидимая копия всех вопросов, которая держит высоту сцены.
+   Ничего не рисует и ни в одном кадре не участвует — живая карточка
+   лежит поверх неё абсолютом. */
+.card3d-sizer {
+  visibility: hidden;
+  pointer-events: none;
+  /* Раскладка и отрисовка распорки замкнуты в ней самой: браузеру незачем
+     учитывать её содержимое, когда он считает кадр движущейся карточки. */
+  contain: layout paint;
+}
+
+/* Объём с распорки снят целиком: каждый translateZ заводит свой контекст
+   отрисовки, а распорке он не нужен — её всё равно не видно. */
+.card3d-sizer,
+.card3d-sizer * {
+  transform: none !important;
+  transition: none !important;
+  transform-style: flat !important;
+  will-change: auto !important;
 }
 
 @media (min-width: 768px) {
-  .card3d {
+  .card3d,
+  .card3d-sizer {
     border-radius: 1.4rem;
     padding: 2.2rem 2.4rem 1.8rem;
   }
@@ -452,134 +483,104 @@ textarea {
 }
 
 /* ------------------------------------------------------------------ */
-/* Объёмная кнопка                                                     */
+/* Главная кнопка: инверсия цветов                                     */
 /*                                                                     */
-/* Толщина сделана вторым слоем под лицевой панелью, а не тенью.       */
-/* Лицо ездит по Y, торец стоит на месте — и глубина читается тем,     */
-/* сколько торца видно. Двигается только transform: ни одного          */
-/* пересчёта размытия в кадре.                                         */
+/* В покое чернильная панель со светлым текстом, при наведении цвета   */
+/* меняются местами: панель становится бумажной, текст — чернильным.   */
+/* Инверсия сделана прозрачностью отдельного слоя, а не сменой         */
+/* background-color: цвет фона браузер перерисовывает каждый кадр,     */
+/* прозрачность слоя считает композитор. Цвет текста догоняет фон      */
+/* тем же переходом — ни рывка, ни объёма, ни торцов.                  */
 /* ------------------------------------------------------------------ */
 
-.btn3d {
+.btn-invert {
   position: relative;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  border-radius: 999px;
-  isolation: isolate;
-}
-
-/* Торец: то, на чём стоит лицевая панель. */
-.btn3d__edge {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  /* Торец — затенённая боковая стенка бруска: он ТЕМНЕЕ лицевой панели.
-     Раньше было наоборот, и блок читался как плоский прямоугольник
-     с подсветкой снизу, а не как объём. */
-  background: linear-gradient(180deg, #1b1913 0%, #080806 100%);
-  box-shadow: inset 0 -1px 0 rgba(243, 240, 234, 0.07);
-  transform: translate3d(0, 9px, 0);
-  z-index: -2;
-}
-
-/* Мягкая опора под кнопкой. Нарисована один раз, гасится прозрачностью. */
-.btn3d__shadow {
-  position: absolute;
-  left: 6%;
-  right: 6%;
-  bottom: -12px;
-  height: 30px;
-  border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(20, 19, 15, 0.45), transparent 72%);
-  opacity: 0.6;
-  transition: opacity 0.24s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
-  z-index: -3;
-}
-
-/* Лицевая панель. Светлая кромка сверху — блик, который делает её выпуклой. */
-.btn3d__face {
-  position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  border-radius: inherit;
-  /* Свет падает сверху: верх панели светлее низа. Блик по верхней кромке
-     и тонкая тень по нижней — то, по чему глаз читает толщину. */
-  background: linear-gradient(180deg, #3b362c 0%, #1d1a15 52%, #141310 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(243, 240, 234, 0.22),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+  border-radius: 999px;
+  border: 1px solid var(--ink);
+  background: var(--ink);
   color: var(--on-ink);
-  transform: translate3d(0, 0, 0);
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+  isolation: isolate;
+  transition: color 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Светлый слой поверх чернильной панели. Он и есть инверсия. */
+.btn-invert__fill {
+  position: absolute;
+  inset: 0;
+  /* Не цвет страницы, а белый лист: иначе при наведении кнопка сливалась
+     бы с фоном и читалась как исчезающая, а не как перевёрнутая. */
+  background: var(--paper-raised);
+  opacity: 0;
+  transition: opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.btn-invert__arrow {
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  /* Кнопка поднимается — торца становится видно больше. */
-  .btn3d:hover .btn3d__face {
-    transform: translate3d(0, -6px, 0);
+  .btn-invert:hover {
+    color: var(--ink);
   }
-  .btn3d:hover .btn3d__shadow {
-    opacity: 0.9;
-    transform: translate3d(0, 5px, 0) scaleX(1.06);
+  .btn-invert:hover .btn-invert__fill {
+    opacity: 1;
+  }
+  .btn-invert:hover .btn-invert__arrow {
+    transform: translate3d(4px, 0, 0);
   }
 }
 
-/* Нажатие: панель садится на торец почти вплотную. */
-.btn3d:active .btn3d__face {
-  transform: translate3d(0, 7px, 0);
-  transition-duration: 0.07s;
+/* Нажатие на сенсорном экране даёт ту же инверсию — быстрее и без
+   промежуточного состояния, чтобы отклик был мгновенным. */
+.btn-invert:active {
+  color: var(--ink);
 }
 
-.btn3d:active .btn3d__shadow {
-  opacity: 0.25;
-  transform: translate3d(0, -3px, 0) scaleX(0.94);
-  transition-duration: 0.07s;
+.btn-invert:active .btn-invert__fill {
+  opacity: 1;
+  transition-duration: 0.09s;
 }
 
-.btn3d:focus-visible {
-  outline: none;
-}
-
-.btn3d:focus-visible .btn3d__face {
-  transform: translate3d(0, -6px, 0);
+.btn-invert:focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 4px;
 }
 
-/* Светлая кнопка на чернильном фоне: контур и ореол светлые,
-   иначе чёрная подсветка на чёрном не видна. */
-.btn--on-ink::before {
-  box-shadow:
-    0 0 0 1px var(--on-ink),
-    0 10px 34px -8px rgba(243, 240, 234, 0.4),
-    0 2px 10px -2px rgba(243, 240, 234, 0.28);
+/* Стрелка «назад». Кружка вокруг неё нет: обводка делала из навигации
+   вторую кнопку и спорила с вариантами ответа. Осталась сама стрелка —
+   жирная, крупная, с хорошей зоной нажатия вокруг. */
+.back-arrow {
+  color: var(--ink-soft);
+  transition:
+    color 0.18s linear,
+    transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Стрелка «назад»: тот же язык, что у вариантов ответа. */
-.back-arrow {
-  transition:
-    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
-    background-color 0.16s linear,
-    border-color 0.16s linear,
-    color 0.16s linear;
+.back-arrow svg {
+  transition: transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .back-arrow:hover {
-    background: var(--hover-fill);
-    border-color: var(--line);
     color: var(--ink);
-    transform: translate3d(-2px, 0, 0);
+  }
+  /* При наведении стрелка отъезжает влево — туда, куда она и ведёт. */
+  .back-arrow:hover svg {
+    transform: translate3d(-5px, 0, 0);
   }
 }
 
-.back-arrow:active {
-  transform: scale(0.94);
+.back-arrow:active svg {
+  transform: translate3d(-2px, 0, 0) scale(0.92);
   transition-duration: 0.08s;
 }
 
@@ -603,42 +604,6 @@ textarea {
   animation: overlay-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Переход «бумага → чернила» на экране с вилкой.
-   Чернильный слой лежит под содержимым и проявляется прозрачностью:
-   анимировать background-color на весь экран значит перерисовывать
-   его каждый кадр, а прозрачность слоя считает композитор. */
-.ink-veil {
-  position: fixed;
-  inset: 0;
-  background: var(--ink);
-  opacity: 0;
-  transition: opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-  pointer-events: none;
-  z-index: 0;
-}
-
-.ink-veil[data-on='1'] {
-  opacity: 1;
-}
-
-/* Цвет текста догоняет фон, а не переключается щелчком. */
-.tone {
-  transition:
-    color 0.4s ease,
-    border-color 0.4s ease;
-}
-
-/* Инверсия для экрана результата. Фон здесь НЕ задаётся: его рисует
-   и плавно проявляет .ink-veil, иначе цвет переключался бы щелчком. */
-.inverted {
-  color: var(--on-ink);
-}
-
-.inverted {
-  --hover-fill: rgba(243, 240, 234, 0.1);
-  --selected-fill: rgba(243, 240, 234, 0.16);
-}
-
 /* Небольшая кнопка-переключатель: без объёма, но с отчётливым откликом
    на нажатие. Заливка и контур задаются на месте использования. */
 .press {
@@ -659,15 +624,6 @@ textarea {
 .press:active {
   transform: scale(0.97);
   transition-duration: 0.08s;
-}
-
-.inverted ::selection {
-  background: var(--gold-soft);
-  color: var(--ink);
-}
-
-.inverted :focus-visible {
-  outline-color: var(--gold-soft);
 }
 
 /* ------------------------------------------------------------------ */
@@ -716,28 +672,24 @@ textarea {
   .btn,
   .btn::before,
   .back-arrow,
+  .back-arrow svg,
   .press {
     transform: none !important;
   }
 
-  /* Объёмная кнопка остаётся объёмной, но перестаёт ездить:
-     торец виден, лицо не двигается. */
-  .btn3d__face,
-  .btn3d__shadow {
+  /* Инверсия главной кнопки остаётся — она сообщает состояние, —
+     но происходит мгновенно, без перехода и без движения стрелки. */
+  .btn-invert,
+  .btn-invert__fill,
+  .btn-invert__arrow {
     transition: none !important;
   }
 
-  .btn3d:hover .btn3d__face,
-  .btn3d:active .btn3d__face {
+  .btn-invert__arrow {
     transform: none !important;
   }
 
   .overlay-in {
     animation: none !important;
-  }
-
-  .ink-veil,
-  .tone {
-    transition: none !important;
   }
 }

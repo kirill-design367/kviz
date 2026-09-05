@@ -31,7 +31,7 @@ export function Success({ channel, reducedMotion }: { channel: string; reducedMo
     <div ref={root} className="max-w-column" role="status">
       <p
         data-appear
-        className="mb-6 text-[0.8rem] uppercase tracking-[0.16em] text-on-ink-soft"
+        className="mb-6 text-[0.8rem] uppercase tracking-[0.16em] text-ink-soft"
       >
         Заявка принята
       </p>
@@ -43,12 +43,12 @@ export function Success({ channel, reducedMotion }: { channel: string; reducedMo
         Спасибо, записал
       </h2>
 
-      <p data-appear className="mt-5 text-[1.05rem] leading-relaxed text-on-ink-soft">
+      <p data-appear className="mt-5 text-[1.05rem] leading-relaxed text-ink-soft">
         Перезвоню в течение семи минут в рабочее время. Если сейчас ночь — утром,
         первым делом. {channel === 'telegram' ? 'Напишу в Telegram.' : 'Наберу по телефону.'}
       </p>
 
-      <p data-appear className="mt-4 text-[0.95rem] leading-relaxed text-on-ink-soft">
+      <p data-appear className="mt-4 text-[0.95rem] leading-relaxed text-ink-soft">
         К разговору подготовлю точный расчёт по вашим ответам и несколько работ,
         близких к вашей задаче.
       </p>

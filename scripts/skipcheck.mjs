@@ -11,7 +11,7 @@ async function run(firstPick, label) {
   await page.waitForTimeout(700);
   const seen = [];
   for (let i = 0; i < 8; i++) {
-    const h = await page.locator('[role="dialog"] h2').innerText().catch(() => null);
+    const h = await page.locator('[role="dialog"] h2').first().innerText().catch(() => null);
     if (!h || h.startsWith('Точный расчёт')) break;
     const progress = await page.locator('[role="progressbar"]').getAttribute('aria-label').catch(() => '');
     seen.push(`${h}  [${progress}]`);

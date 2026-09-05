@@ -53,6 +53,23 @@ async function run(browser, view) {
   await page.screenshot({ path: `${OUT}/05-вилка-и-форма-${view.tag}.png` });
   const priceText = await page.locator('.figure').first().innerText().catch(() => '');
 
+  // Тот же экран, но выбран Telegram: вместо телефона — поле для ника.
+  await page.getByRole('button', { name: 'Написать в Telegram' }).click();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${OUT}/05b-вилка-и-форма-телеграм-${view.tag}.png` });
+  const telegramField = await page.evaluate(() => {
+    const input = document.querySelector('#telegram');
+    const label = input ? document.querySelector('label[for="telegram"]') : null;
+    return {
+      'поле ника есть': Boolean(input),
+      подпись: label?.textContent?.trim() ?? null,
+      подсказка: input?.getAttribute('placeholder') ?? null,
+      'поля телефона нет': !document.querySelector('#phone'),
+    };
+  });
+  await page.getByRole('button', { name: 'Позвонить' }).click();
+  await page.waitForTimeout(400);
+
   // Проверка валидации телефона
   await page.fill('#name', 'Кирилл');
   await page.fill('#phone', '123');
@@ -112,6 +129,7 @@ async function run(browser, view) {
     view: view.tag,
     priceText: priceText.replace(/\s+/g, ' ').trim(),
     'вилка при бюджете выше расчёта': richPrice.replace(/\s+/g, ' ').trim(),
+    'поле для Telegram': telegramField,
     phoneError,
     success,
     errors,

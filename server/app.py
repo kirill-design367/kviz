@@ -377,6 +377,28 @@ def accept_phone(raw):
     return value, digits
 
 
+# Ник в Telegram: 5–32 знака, латиница, цифры и подчёркивание, начинается
+# с буквы. Пишут по-разному — «@name», «name», «t.me/name», ссылкой целиком.
+TELEGRAM_NICK = re.compile(r"^[A-Za-z][A-Za-z0-9_]{4,31}$")
+TELEGRAM_PREFIX = re.compile(r"^(https?://)?(www\.)?t(elegram)?\.me/", re.IGNORECASE)
+
+
+def accept_telegram(raw):
+    """Принимает ник ровно в том виде, в каком его напечатали.
+
+    Возвращает (как_напечатано, только_ник) либо (None, None). Сам ник
+    нужен для ссылки в сообщении владельцу: по нему открывается диалог.
+    """
+    value = (raw or "").strip()
+    if not value or len(value) > 80:
+        return None, None
+    nick = TELEGRAM_PREFIX.sub("", value).lstrip("@")
+    nick = re.split(r"[/?#]", nick, 1)[0].strip()
+    if not TELEGRAM_NICK.match(nick):
+        return None, None
+    return value, nick
+
+
 def clean_text(value, limit):
     if not isinstance(value, str):
         return ""
@@ -390,13 +412,22 @@ def parse_lead(payload, remote_ip, user_agent):
     if len(name) < 2 or not NAME_OK.match(name):
         errors["name"] = "Имя не похоже на имя"
 
-    phone, phone_digits = accept_phone(payload.get("phone"))
-    if not phone:
-        errors["phone"] = "Это не похоже на номер телефона"
-
     channel = payload.get("channel")
     if channel not in CHANNELS:
         errors["channel"] = "Неизвестный способ связи"
+
+    # Что спрашивали на экране, то и проверяем. Выбрал Telegram — прислал
+    # ник, и телефона у него нет; выбрал звонок — прислал номер.
+    phone = phone_digits = None
+    telegram = telegram_nick = None
+    if channel == "telegram":
+        telegram, telegram_nick = accept_telegram(payload.get("telegram"))
+        if not telegram:
+            errors["telegram"] = "Это не похоже на ник в Telegram"
+    else:
+        phone, phone_digits = accept_phone(payload.get("phone"))
+        if not phone:
+            errors["phone"] = "Это не похоже на номер телефона"
 
     if clean_text(payload.get("company"), 100):
         # Ловушка для ботов: поле скрыто от человека и всегда должно быть пустым.
@@ -435,10 +466,13 @@ def parse_lead(payload, remote_ip, user_agent):
         "id": uuid.uuid4().hex[:12],
         "received_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "name": name,
-        # Ровно то, что напечатал человек.
+        # Ровно то, что напечатал человек. Заполнено то поле, которое он видел.
         "phone": phone,
-        # Только цифры — нужны для ссылки в Telegram, в сообщении не показываются.
+        # Только цифры — нужны для ссылки, в сообщении не показываются.
         "phone_digits": phone_digits,
+        "telegram": telegram,
+        "telegram_nick": telegram_nick,
+        "contact": telegram or phone or "—",
         "channel": channel,
         "channel_label": CHANNELS.get(channel, "—"),
         "answers": safe_answers,
@@ -472,9 +506,12 @@ def render_message(lead):
         "<b>Заявка с квиза</b>",
         "",
         "<b>%s</b>" % escape_html(lead["name"]),
-        "%s · %s" % (escape_html(lead["phone"]), escape_html(lead["channel_label"])),
+        "%s · %s" % (escape_html(lead.get("contact") or "—"), escape_html(lead["channel_label"])),
     ]
-    if lead["channel"] == "telegram" and lead.get("phone_digits"):
+    if lead.get("telegram_nick"):
+        lines.append("Написать: https://t.me/%s" % lead["telegram_nick"])
+    elif lead["channel"] == "telegram" and lead.get("phone_digits"):
+        # Заявки старого образца: ника не было, оставался только номер.
         lines.append("Написать: https://t.me/+%s" % lead["phone_digits"])
 
     low = lead["price"].get("low")

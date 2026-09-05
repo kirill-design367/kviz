@@ -41,18 +41,14 @@ export function Hero({ onStart }: Props) {
             <button
               type="button"
               onClick={onStart}
-              className="btn3d group w-full sm:w-auto"
+              className="btn-invert w-full px-8 py-[1.15rem] text-[1.05rem] font-medium sm:w-auto sm:px-12 sm:py-[1.3rem] sm:text-[1.12rem]"
             >
-              <span aria-hidden className="btn3d__shadow" />
-              <span aria-hidden className="btn3d__edge" />
-              <span className="btn3d__face px-8 py-[1.15rem] text-[1.05rem] font-medium sm:px-12 sm:py-[1.3rem] sm:text-[1.12rem]">
-                Рассчитать стоимость
-                <span
-                  aria-hidden
-                  className="transition-transform duration-300 ease-aurea group-hover:translate-x-1"
-                >
-                  →
-                </span>
+              {/* Светлый слой — это и есть инверсия: он проявляется поверх
+                  чернильной панели, а цвет текста идёт ему навстречу. */}
+              <span aria-hidden className="btn-invert__fill" />
+              Рассчитать стоимость
+              <span aria-hidden className="btn-invert__arrow">
+                →
               </span>
             </button>
           </div>
