@@ -16,18 +16,19 @@ type Status = 'idle' | 'sending' | 'sent' | 'failed';
 type Props = {
   answers: Answers;
   price: PriceRange;
-  onSent: () => void;
+  onSent: (channel: Channel) => void;
 };
 
-const CHANNELS: { id: Channel; label: string; hint: string }[] = [
-  { id: 'telegram', label: 'Telegram', hint: 'в мессенджер' },
-  { id: 'call', label: 'Звонок', hint: 'по телефону' },
+const CHANNELS: { id: Channel; label: string }[] = [
+  { id: 'call', label: 'Позвонить' },
+  { id: 'telegram', label: 'Написать в Telegram' },
 ];
 
 export function LeadForm({ answers, price, onSent }: Props) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [channel, setChannel] = useState<Channel>('telegram');
+  // По умолчанию звонок: обещание перезвонить за семь минут — основной путь.
+  const [channel, setChannel] = useState<Channel>('call');
   const [status, setStatus] = useState<Status>('idle');
   const [errors, setErrors] = useState<{ name?: string; phone?: string; form?: string }>({});
   const [touched, setTouched] = useState(false);
@@ -78,7 +79,7 @@ export function LeadForm({ answers, price, onSent }: Props) {
       if (!response.ok) throw new Error(`ответ сервера ${response.status}`);
       setStatus('sent');
       reachGoal(GOALS.leadSent);
-      onSent();
+      onSent(channel);
     } catch (error) {
       busy.current = false;
       setStatus('failed');
@@ -127,10 +128,11 @@ export function LeadForm({ answers, price, onSent }: Props) {
         />
 
         <fieldset>
-          <legend className="text-[0.78rem] uppercase tracking-[0.14em] text-on-ink-soft">
-            Куда ответить
+          <legend className="text-[0.88rem] leading-relaxed text-on-ink-soft">
+            Через семь минут наберу и назову точную стоимость. Если звонки
+            неудобны — напишу в Telegram, как вам лучше?
           </legend>
-          <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="mt-3 grid gap-2">
             {CHANNELS.map((item) => {
               const active = channel === item.id;
               return (
@@ -140,12 +142,24 @@ export function LeadForm({ answers, price, onSent }: Props) {
                   disabled={sending}
                   aria-pressed={active}
                   onClick={() => setChannel(item.id)}
-                  className={`press flex min-h-[46px] items-center justify-center rounded-xl border px-3 text-[0.98rem] font-medium ${
+                  className={`press relative flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-full border px-5 text-[1rem] font-medium ${
                     active
                       ? 'border-on-ink bg-on-ink/15 text-on-ink'
-                      : 'border-on-ink-soft/40 text-on-ink-soft hover:border-on-ink-soft hover:bg-on-ink/[0.06]'
+                      : 'border-on-ink-soft/45 text-on-ink-soft hover:border-on-ink-soft hover:bg-on-ink/[0.07] hover:text-on-ink'
                   }`}
                 >
+                  <span
+                    aria-hidden
+                    className={`grid h-[17px] w-[17px] shrink-0 place-items-center rounded-full border transition-colors duration-150 ${
+                      active ? 'border-on-ink' : 'border-on-ink-soft/70'
+                    }`}
+                  >
+                    <span
+                      className={`h-[7px] w-[7px] rounded-full transition-transform duration-200 ease-aurea ${
+                        active ? 'scale-100 bg-on-ink' : 'scale-0 bg-on-ink'
+                      }`}
+                    />
+                  </span>
                   {item.label}
                 </button>
               );
@@ -181,7 +195,7 @@ export function LeadForm({ answers, price, onSent }: Props) {
 
       <p className="mt-3.5 text-[0.88rem] leading-relaxed text-on-ink-soft">
         Дальше одно из двух: пришлю точный расчёт по вашей задаче или наберу,
-        и обсудим детали голосом. Как вам удобнее — так и сделаю.
+        и обсудим детали по телефону. Как вам удобнее — так и сделаю.
       </p>
 
       <p className="mt-2 text-[0.78rem] leading-snug text-on-ink-soft/85">

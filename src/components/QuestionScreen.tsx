@@ -10,6 +10,8 @@ type Props = {
   onSelect: (optionId: string) => void;
   disabled: boolean;
   reducedMotion: boolean;
+  /** Идёт переход между вопросами — наклон на это время не нужен. */
+  busy: boolean;
 };
 
 /**
@@ -24,13 +26,13 @@ type Props = {
  * на сенсорных экранах и при prefers-reduced-motion.
  */
 export const QuestionScreen = forwardRef<HTMLDivElement, Props>(function QuestionScreen(
-  { question, selected, onSelect, disabled, reducedMotion },
+  { question, selected, onSelect, disabled, reducedMotion, busy },
   ref,
 ) {
   const list = useRef<HTMLUListElement>(null);
   const card = useRef<HTMLDivElement>(null);
 
-  usePointerTilt(card, { max: 5, enabled: !reducedMotion });
+  usePointerTilt(card, { max: 5, enabled: !reducedMotion && !busy });
 
   // Стрелки внутри группы — то, что скринридер и клавиатурный пользователь
   // ожидают от списка вариантов. Выбор при этом не происходит: человек

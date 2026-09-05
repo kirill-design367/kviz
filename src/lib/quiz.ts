@@ -10,11 +10,13 @@ export type QuizOption = {
 
 export type QuizQuestion = {
   id: string;
-  /** Порядковый номер для человека: 1..7 */
+  /** Собственный номер вопроса. Не меняется, даже если вопрос пропущен. */
   order: number;
   title: string;
   /** Короткая подпись под заголовком. Не обязательна. */
   caption?: string;
+  /** Когда вопрос не нужно задавать: ответ уже следует из предыдущих. */
+  skipWhen?: (answers: Answers) => boolean;
   options: QuizOption[];
 };
 
@@ -58,19 +60,25 @@ export const QUESTIONS: QuizQuestion[] = [
     title: 'Когда нужен результат?',
     options: [
       { id: 'asap', label: 'Вчера' },
+      { id: 'week', label: 'В течение недели' },
       { id: 'month', label: 'В течение месяца' },
-      { id: 'two-months', label: '1–2 месяца' },
-      { id: 'no-rush', label: 'Не горит, ищу подрядчика' },
+      { id: 'two-months', label: 'В течение 1–2 месяцев' },
     ],
   },
   {
-    id: 'pages',
+    id: 'structure',
     order: 5,
-    title: 'Сколько страниц?',
+    title: 'Какая структура сайта нужна?',
+    /**
+     * Вопрос не задаётся тем, кто в первом вопросе выбрал интернет-магазин:
+     * структура из этого ответа уже понятна, и спрашивать второй раз значит
+     * заставлять человека повторяться. См. visibleQuestions ниже.
+     */
+    skipWhen: (answers) => answers.task === 'shop',
     options: [
-      { id: 'one', label: 'Одна' },
-      { id: 'upto5', label: 'До пяти' },
-      { id: 'more5', label: 'Больше пяти' },
+      { id: 'landing', label: 'Лендинг' },
+      { id: 'multi', label: 'Многостраничник' },
+      { id: 'shop', label: 'Интернет-магазин' },
       { id: 'unknown', label: 'Не знаю' },
     ],
   },
@@ -100,22 +108,26 @@ export const QUESTIONS: QuizQuestion[] = [
   },
 ];
 
-export const TOTAL_STEPS = QUESTIONS.length;
-
 export type Answers = Partial<Record<string, OptionId>>;
 
-export function isComplete(answers: Answers): boolean {
-  return QUESTIONS.every((q) => Boolean(answers[q.id]));
+/**
+ * Вопросы, которые человеку действительно зададут при таких ответах.
+ *
+ * Список пересчитывается на каждый ответ: выбрал в первом вопросе
+ * интернет-магазин — вопрос про структуру выпадает, и в квизе остаётся шесть
+ * шагов вместо семи. Прогресс и нумерация считаются по этому списку.
+ */
+export function visibleQuestions(answers: Answers): QuizQuestion[] {
+  return QUESTIONS.filter((q) => !q.skipWhen?.(answers));
 }
 
-export function firstUnansweredIndex(answers: Answers): number {
-  const idx = QUESTIONS.findIndex((q) => !answers[q.id]);
-  return idx === -1 ? QUESTIONS.length : idx;
+export function isComplete(answers: Answers): boolean {
+  return visibleQuestions(answers).every((q) => Boolean(answers[q.id]));
 }
 
 /** Человекочитаемая пара «вопрос — ответ» для письма в Telegram и для отладки. */
 export function readableAnswers(answers: Answers): { question: string; answer: string }[] {
-  return QUESTIONS.map((q) => ({
+  return visibleQuestions(answers).map((q) => ({
     question: q.title,
     answer: q.options.find((o) => o.id === answers[q.id])?.label ?? '—',
   }));

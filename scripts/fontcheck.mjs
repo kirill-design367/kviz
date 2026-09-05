@@ -1,5 +1,5 @@
 import { chromium, devices } from 'playwright';
-const BASE = process.env.SHOT_BASE ?? 'http://127.0.0.1:4301/kviz/';
+const BASE = process.env.SHOT_BASE ?? 'http://127.0.0.1:4302/kviz/';
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 for (const [tag, ctxOpts] of [['десктоп', { viewport: { width: 1440, height: 900 } }], ['мобильная', { ...devices['iPhone 13'] }]]) {
   const ctx = await b.newContext({ ...ctxOpts, locale: 'ru-RU' });

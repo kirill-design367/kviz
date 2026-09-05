@@ -3,7 +3,7 @@ import { QUESTIONS, type Answers } from './quiz';
 /**
  * Расчёт вилки стоимости.
  *
- * Основа — три ответа: что делаем (1), сколько страниц (5), что важнее (6).
+ * Основа — три ответа: что делаем (1), какая структура (5), что важнее (6).
  * Названный бюджет (7) не задаёт цену, но и не игнорируется: он подтягивает
  * вилку к себе, когда расходится с ней. Подробности — в budgetPull ниже.
  *
@@ -16,8 +16,8 @@ import { QUESTIONS, type Answers } from './quiz';
  * ОБЪЕДИНЕНИЕ правдоподобных вариантов: низ берётся от самого дешёвого
  * из них, верх — от самого дорогого. Если считать неопределённость просто
  * «средним случаем», получается ловушка: человек, которому нужен магазин
- * на двенадцать страниц, но который честно выбрал «не знаю», увидел бы
- * потолок НИЖЕ, чем если бы ответил точно. Такая модель учит не отвечать.
+ * но который честно выбрал «не знаю», увидел бы потолок НИЖЕ, чем если бы
+ * ответил точно. Такая модель учит не отвечать.
  */
 
 export type PriceRange = {
@@ -43,44 +43,54 @@ export type PriceRange = {
  */
 const FLOOR = {
   landing: 50_000,
-  upto5: 75_000,
-  more5: 125_000,
+  multi: 95_000,
   shop: 150_000,
-  redesign: 40_000,
 } as const;
 
 type Task = 'new' | 'redesign' | 'shop' | 'unsure';
-type Pages = 'one' | 'upto5' | 'more5' | 'unknown';
+type Structure = 'landing' | 'multi' | 'shop' | 'unknown';
+type CertainTask = Exclude<Task, 'unsure'>;
+type CertainStructure = Exclude<Structure, 'unknown'>;
 
-/** База по паре «что делаем» × «сколько страниц». Только определённые ответы. */
-const BASE: Record<Exclude<Task, 'unsure'>, Record<Exclude<Pages, 'unknown'>, number>> = {
+/**
+ * База по паре «что делаем» × «структура». Только определённые ответы.
+ *
+ * Переделка дешевле работы с нуля при той же структуре: часть решений,
+ * контента и логики уже существует. Магазин стоит своего ориентира
+ * независимо от того, назван он в первом вопросе или в пятом, — иначе
+ * два пути к одному и тому же ответу давали бы разные деньги.
+ */
+const BASE: Record<CertainTask, Record<CertainStructure, number>> = {
   new: {
-    one: FLOOR.landing,
-    upto5: FLOOR.upto5,
-    more5: FLOOR.more5,
+    landing: FLOOR.landing,
+    multi: FLOOR.multi,
+    shop: FLOOR.shop,
   },
   shop: {
-    // Магазин — это витрина, карточка, корзина, оплата и выгрузка товаров.
-    // Число страниц тут почти ничего не решает, и дешевле ориентира он не бывает.
-    one: FLOOR.shop,
-    upto5: FLOOR.shop,
-    more5: 190_000,
+    landing: FLOOR.shop,
+    multi: FLOOR.shop,
+    shop: FLOOR.shop,
   },
   redesign: {
-    one: FLOOR.redesign,
-    upto5: 60_000,
-    more5: 95_000,
+    landing: 40_000,
+    multi: 75_000,
+    shop: 120_000,
   },
 };
 
 /**
  * Что «не знаю» и «пока не определился» означают на самом деле.
  * Низ — самый дешёвый правдоподобный вариант, верх — самый дорогой.
+ *
+ * Про структуру важная тонкость. Если человек в первом вопросе уже сказал,
+ * что это не магазин, то «не знаю» про структуру означает выбор между
+ * лендингом и многостраничником, а не «вплоть до магазина»: тянуть верх
+ * до магазина значило бы не поверить его же ответу и раздуть вилку втрое.
+ * Магазин попадает в верх только тогда, когда и задача не определена.
  */
-const CHEAPEST_TASK: Exclude<Task, 'unsure'> = 'new';
-const DEAREST_TASK: Exclude<Task, 'unsure'> = 'shop';
-const CHEAPEST_PAGES: Exclude<Pages, 'unknown'> = 'upto5';
-const DEAREST_PAGES: Exclude<Pages, 'unknown'> = 'more5';
+const CHEAPEST_TASK: CertainTask = 'new';
+const DEAREST_TASK: CertainTask = 'shop';
+const CHEAPEST_STRUCTURE: CertainStructure = 'landing';
 
 /**
  * Потолок, который человек назвал в вопросе о бюджете.
@@ -136,46 +146,52 @@ const TASK_LABEL: Record<string, string> = {
   shop: 'Интернет-магазин',
   unsure: 'Задача пока не определена',
 };
-const PAGES_LABEL: Record<string, string> = {
-  one: 'одна страница',
-  upto5: 'до пяти страниц',
-  more5: 'больше пяти страниц',
-  unknown: 'количество страниц пока не ясно',
+const STRUCTURE_LABEL: Record<string, string> = {
+  landing: 'лендинг',
+  multi: 'многостраничник',
+  shop: 'интернет-магазин',
+  unknown: 'структура пока не выбрана',
 };
 
 const roundTo = (value: number) => Math.round(value / STEP) * STEP;
 const floorTo = (value: number) => Math.floor(value / STEP) * STEP;
 const ceilTo = (value: number) => Math.ceil(value / STEP) * STEP;
 
-function baseOf(task: Exclude<Task, 'unsure'>, pages: Exclude<Pages, 'unknown'>) {
-  return BASE[task][pages];
+function baseOf(task: CertainTask, structure: CertainStructure) {
+  return BASE[task][structure];
 }
 
 /** Пара «самая дешёвая база — самая дорогая база» с учётом неопределённости. */
-function baseRange(task: Task, pages: Pages): { low: number; high: number } {
-  const tasksLow: Exclude<Task, 'unsure'> = task === 'unsure' ? CHEAPEST_TASK : task;
-  const tasksHigh: Exclude<Task, 'unsure'> = task === 'unsure' ? DEAREST_TASK : task;
-  const pagesLow: Exclude<Pages, 'unknown'> = pages === 'unknown' ? CHEAPEST_PAGES : pages;
-  const pagesHigh: Exclude<Pages, 'unknown'> = pages === 'unknown' ? DEAREST_PAGES : pages;
+function baseRange(task: Task, structure: Structure): { low: number; high: number } {
+  const taskLow: CertainTask = task === 'unsure' ? CHEAPEST_TASK : task;
+  const taskHigh: CertainTask = task === 'unsure' ? DEAREST_TASK : task;
+  const structLow: CertainStructure =
+    structure === 'unknown' ? CHEAPEST_STRUCTURE : structure;
+  // Магазин уходит в верх, только если задача тоже не названа.
+  const structHigh: CertainStructure =
+    structure === 'unknown' ? (task === 'unsure' ? 'shop' : 'multi') : structure;
   return {
-    low: baseOf(tasksLow, pagesLow),
-    high: baseOf(tasksHigh, pagesHigh),
+    low: baseOf(taskLow, structLow),
+    high: baseOf(taskHigh, structHigh),
   };
 }
 
 export function calculatePrice(answers: Answers): PriceRange {
   const task = (answers.task ?? 'unsure') as Task;
-  const pages = (answers.pages ?? 'unknown') as Pages;
+  // Выбравшим магазин в первом вопросе вопрос про структуру не задаётся,
+  // поэтому структура берётся из задачи, а не из пропущенного ответа.
+  const structure: Structure =
+    task === 'shop' ? 'shop' : ((answers.structure ?? 'unknown') as Structure);
   const priority = answers.priority ?? 'price';
 
-  const bases = BASE[(task === 'unsure' ? CHEAPEST_TASK : task) as Exclude<Task, 'unsure'>]
-    ? baseRange(task, pages)
+  const bases = BASE[task === 'unsure' ? CHEAPEST_TASK : task]
+    ? baseRange(task, structure)
     : baseRange('unsure', 'unknown');
   const weight = PRIORITY[priority] ?? PRIORITY.price;
 
   const uncertain: string[] = [];
   if (task === 'unsure') uncertain.push('задача');
-  if (pages === 'unknown') uncertain.push('объём');
+  if (structure === 'unknown') uncertain.push('структура');
   const maxSpread = MAX_SPREAD_BY_UNCERTAINTY[uncertain.length] ?? 2.8;
 
   let low = roundTo(bases.low * weight.low);
@@ -201,10 +217,10 @@ export function calculatePrice(answers: Answers): PriceRange {
     low,
     high,
     uncertain,
-    caveat: caveatFor(task, pages, high),
+    caveat: caveatFor(task, structure, high),
     factors: [
       { label: 'Задача', value: TASK_LABEL[task] ?? '—' },
-      { label: 'Объём', value: volumeLabel(task, pages) },
+      { label: 'Структура', value: capitalize(STRUCTURE_LABEL[structure] ?? '—') },
       { label: 'Приоритет', value: capitalize(weight.note) },
     ],
   };
@@ -215,29 +231,17 @@ export function calculatePrice(answers: Answers): PriceRange {
  * ответа, а про менее вероятный, но заметно более дорогой край говорим прямо:
  * это честнее, чем растянуть вилку втрое и сделать её бессмысленной.
  */
-function caveatFor(task: Task, pages: Pages, high: number): string | null {
+function caveatFor(task: Task, structure: Structure, high: number): string | null {
   if (task === 'unsure' && high < FLOOR.shop) {
     return 'Считал по самому частому случаю — обычный сайт. Если задача окажется интернет-магазином, вилка начинается от 150 000 ₽.';
   }
   if (task === 'unsure') {
     return 'Задачу вы пока не выбрали, поэтому вилка широкая: она покрывает и обычный сайт, и интернет-магазин. Определитесь — и я назову диапазон уже.';
   }
-  if (pages === 'unknown') {
-    return 'Объём вы пока не знаете, поэтому вилка широкая: она покрывает и небольшой сайт, и большой. Как только объём прояснится, диапазон сузится.';
+  if (structure === 'unknown') {
+    return 'Структуру вы пока не выбрали, поэтому вилка широкая: она покрывает и лендинг, и многостраничник. Как только структура прояснится, диапазон сузится.';
   }
   return null;
-}
-
-/**
- * Для магазина число страниц почти не двигает сумму: платят за витрину,
- * карточку, корзину и оплату. Показывать «Объём: одна страница» рядом
- * с тремястами тысячами — значит объяснять цифру тем, что на неё не влияет.
- */
-function volumeLabel(task: Task, pages: Pages): string {
-  if (task === 'shop' && (pages === 'one' || pages === 'upto5')) {
-    return 'Витрина, карточка товара и корзина';
-  }
-  return capitalize(PAGES_LABEL[pages] ?? '—');
 }
 
 function capitalize(value: string) {
@@ -250,7 +254,7 @@ export function formatMoney(value: number): string {
 }
 
 /** Ключи вопросов, которые участвуют в расчёте. */
-export const PRICING_INPUTS = ['task', 'pages', 'priority', 'budget'] as const;
+export const PRICING_INPUTS = ['task', 'structure', 'priority', 'budget'] as const;
 
 export const BUDGET_QUESTION_LABEL =
   QUESTIONS.find((q) => q.id === 'budget')?.title ?? 'Бюджет на проект';

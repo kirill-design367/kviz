@@ -287,7 +287,8 @@ textarea {
     transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.16s linear,
     color 0.16s linear;
-  will-change: transform;
+  /* will-change тут не ставим: вариантов на экране до пяти, и постоянный
+     композитный слой на каждом дороже, чем разовое повышение при наведении. */
 }
 
 .option3d[data-selected='1'] {

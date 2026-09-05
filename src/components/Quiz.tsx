@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { QUESTIONS, TOTAL_STEPS, isComplete, type Answers } from '@/lib/quiz';
+import { visibleQuestions, isComplete, type Answers } from '@/lib/quiz';
 import { calculatePrice } from '@/lib/pricing';
 import { GOALS, reachGoal } from '@/lib/metrika';
 import { Progress } from './Progress';
@@ -44,13 +44,26 @@ export function Quiz({ reducedMotion, onClose }: Props) {
   const [answers, setAnswers] = useState<Answers>({});
   const [step, setStep] = useState(0);
   const [view, setView] = useState<QuizView>('questions');
-  const [channel] = useState('telegram');
+  // Способ связи приходит из формы: подтверждение должно говорить то же,
+  // что человек выбрал, а не всегда «напишу в Telegram».
+  const [channel, setChannel] = useState('call');
 
   const card = useRef<HTMLDivElement>(null);
   const locked = useRef(false);
+  /**
+   * Идёт ли переход между вопросами. Наклон карточки за указателем на это
+   * время выключается: покадровое обновление наклона и движение по Z вместе
+   * дают до 15 % длинных кадров на большом экране, а по отдельности — почти
+   * ничего. Во время перехода наклон всё равно не нужен.
+   */
+  const [busy, setBusy] = useState(false);
   const direction = useRef(1);
 
-  const question = QUESTIONS[Math.min(step, TOTAL_STEPS - 1)];
+  // Список пересчитывается по ответам: выбрал магазин в первом вопросе —
+  // вопрос про структуру выпадает, и шагов становится шесть.
+  const questions = visibleQuestions(answers);
+  const total = questions.length;
+  const question = questions[Math.min(step, total - 1)];
   const price = calculatePrice(answers);
 
   // --- цель «показана вилка» -------------------------------------------- //
@@ -70,6 +83,7 @@ export function Quiz({ reducedMotion, onClose }: Props) {
       node.style.opacity = '1';
       node.style.transform = 'none';
       locked.current = false;
+      setBusy(false);
       return;
     }
 
@@ -100,6 +114,7 @@ export function Quiz({ reducedMotion, onClose }: Props) {
           clearProps: 'transform',
           onComplete: () => {
             locked.current = false;
+            setBusy(false);
           },
         },
       );
@@ -116,6 +131,7 @@ export function Quiz({ reducedMotion, onClose }: Props) {
     (apply: () => void, dir: 1 | -1) => {
       if (locked.current) return;
       locked.current = true;
+      setBusy(true);
       direction.current = dir;
 
       if (reducedMotion || !card.current) {
@@ -124,6 +140,7 @@ export function Quiz({ reducedMotion, onClose }: Props) {
         // проскочил бы сразу в следующий вопрос.
         window.setTimeout(() => {
           locked.current = false;
+          setBusy(false);
         }, TAP_GUARD_MS);
         return;
       }
@@ -156,10 +173,13 @@ export function Quiz({ reducedMotion, onClose }: Props) {
       setAnswers(next);
       reachGoal(GOALS.quizStep(question.order));
 
-      const isLast = step === TOTAL_STEPS - 1;
+      // Список считаем по НОВЫМ ответам: ответ на первый вопрос может
+      // убрать вопрос про структуру, и последним станет шестой шаг.
+      const nextTotal = visibleQuestions(next).length;
+      const isLast = step >= nextTotal - 1;
       transition(() => {
         if (isLast && isComplete(next)) setView('result');
-        else setStep((current) => Math.min(current + 1, TOTAL_STEPS - 1));
+        else setStep((current) => Math.min(current + 1, nextTotal - 1));
       }, 1);
     },
     [answers, question, step, transition],
@@ -169,7 +189,7 @@ export function Quiz({ reducedMotion, onClose }: Props) {
     if (view === 'result') {
       reachGoal(GOALS.quizBack, undefined, false);
       setView('questions');
-      setStep(TOTAL_STEPS - 1);
+      setStep(total - 1);
       return;
     }
     if (step === 0) {
@@ -178,7 +198,7 @@ export function Quiz({ reducedMotion, onClose }: Props) {
     }
     reachGoal(GOALS.quizBack, undefined, false);
     transition(() => setStep((current) => Math.max(0, current - 1)), -1);
-  }, [step, view, transition, onClose]);
+  }, [step, total, view, transition, onClose]);
 
   // --- клавиатура --------------------------------------------------------- //
 
@@ -242,7 +262,7 @@ export function Quiz({ reducedMotion, onClose }: Props) {
 
         {view === 'questions' ? (
           <div className="mt-7 md:mt-10">
-            <Progress current={step} total={TOTAL_STEPS} reducedMotion={reducedMotion} />
+            <Progress current={step} total={total} reducedMotion={reducedMotion} />
           </div>
         ) : null}
 
@@ -251,41 +271,9 @@ export function Quiz({ reducedMotion, onClose }: Props) {
             view === 'result' ? 'py-3 md:py-8' : 'py-9 md:py-12'
           }`}
         >
+          {/* Возврат стоит НАД карточкой и слева: подпись сверху, стрелка под ней. */}
           {view === 'questions' ? (
-            <QuestionScreen
-              ref={card}
-              question={question}
-              selected={answers[question.id]}
-              onSelect={select}
-              disabled={false}
-              reducedMotion={reducedMotion}
-            />
-          ) : null}
-
-          {/* Вилка и форма в одном кадре: человек видит цифру и тут же поля,
-              листать за формой не нужно. На широком экране — две колонки,
-              на телефоне — плотная колонка, которая помещается в экран. */}
-          {view === 'result' ? (
-            <div className="mx-auto grid w-full max-w-[62rem] items-center gap-6 lg:grid-cols-2 lg:gap-16">
-              <div>
-                <PriceResult price={price} reducedMotion={reducedMotion} />
-              </div>
-              <div>
-                <LeadForm
-                  answers={answers}
-                  price={price}
-                  onSent={() => setView('success')}
-                />
-              </div>
-            </div>
-          ) : null}
-
-          {view === 'success' ? <Success channel={channel} reducedMotion={reducedMotion} /> : null}
-        </main>
-
-        <footer className="pb-2">
-          {view === 'questions' ? (
-            <div className="flex flex-col items-start gap-2">
+            <div className="mb-6 flex flex-col items-start gap-2 md:mb-8">
               <span id="back-hint" className="text-[0.8rem] text-ink-faint">
                 Можно вернуться и поменять ответ
               </span>
@@ -304,7 +292,44 @@ export function Quiz({ reducedMotion, onClose }: Props) {
               </button>
             </div>
           ) : null}
-        </footer>
+
+          {view === 'questions' ? (
+            <QuestionScreen
+              ref={card}
+              question={question}
+              selected={answers[question.id]}
+              onSelect={select}
+              disabled={false}
+              reducedMotion={reducedMotion}
+              busy={busy}
+            />
+          ) : null}
+
+          {/* Вилка и форма в одном кадре: человек видит цифру и тут же поля,
+              листать за формой не нужно. На широком экране — две колонки,
+              на телефоне — плотная колонка, которая помещается в экран. */}
+          {view === 'result' ? (
+            <div className="mx-auto grid w-full max-w-[62rem] items-center gap-6 lg:grid-cols-2 lg:gap-16">
+              <div>
+                <PriceResult price={price} reducedMotion={reducedMotion} />
+              </div>
+              <div>
+                <LeadForm
+                  answers={answers}
+                  price={price}
+                  onSent={(chosen) => {
+                    setChannel(chosen);
+                    setView('success');
+                  }}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {view === 'success' ? <Success channel={channel} reducedMotion={reducedMotion} /> : null}
+        </main>
+
+        <footer className="pb-2" />
       </div>
     </div>
   );

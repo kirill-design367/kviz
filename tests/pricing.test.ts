@@ -1,27 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculatePrice } from '../src/lib/pricing';
-import { QUESTIONS } from '../src/lib/quiz';
+import { QUESTIONS, visibleQuestions } from '../src/lib/quiz';
 
 const TASKS = ['new', 'redesign', 'shop', 'unsure'];
-const PAGES = ['one', 'upto5', 'more5', 'unknown'];
+const STRUCTURES = ['landing', 'multi', 'shop', 'unknown'];
 const PRIORITY = ['speed', 'design', 'features', 'price'];
 const BUDGETS = ['lt50', '50-150', '150-300', 'gt300', 'discuss'];
 
 const all = () => {
-  const out: { task: string; pages: string; priority: string }[] = [];
+  const out: { task: string; structure: string; priority: string }[] = [];
   for (const task of TASKS)
-    for (const pages of PAGES)
-      for (const priority of PRIORITY) out.push({ task, pages, priority });
+    for (const structure of STRUCTURES)
+      for (const priority of PRIORITY) out.push({ task, structure, priority });
   return out;
 };
 
-const price = (task: string, pages: string, priority: string, budget = 'discuss') =>
-  calculatePrice({ task, pages, priority, budget, goal: 'sell', assets: 'idea', deadline: 'month' });
+const price = (task: string, structure: string, priority: string, budget = 'discuss') =>
+  calculatePrice({ task, structure, priority, budget, goal: 'sell', assets: 'idea', deadline: 'month' });
 
 test('все 64 комбинации дают положительный диапазон', () => {
   for (const c of all()) {
-    const r = price(c.task, c.pages, c.priority);
+    const r = price(c.task, c.structure, c.priority);
     assert.ok(r.low > 0, `low > 0 для ${JSON.stringify(c)}`);
     assert.ok(r.high > r.low, `high > low для ${JSON.stringify(c)}, получено ${r.low}–${r.high}`);
   }
@@ -30,9 +30,9 @@ test('все 64 комбинации дают положительный диа�
 test('бюджет никогда не поднимает цену', () => {
   // Платить больше за ту же работу только потому, что человек может, — нельзя.
   for (const c of all()) {
-    const base = price(c.task, c.pages, c.priority, 'discuss');
+    const base = price(c.task, c.structure, c.priority, 'discuss');
     for (const budget of BUDGETS) {
-      const other = price(c.task, c.pages, c.priority, budget);
+      const other = price(c.task, c.structure, c.priority, budget);
       assert.ok(
         other.low <= base.low,
         `бюджет ${budget} поднял низ для ${JSON.stringify(c)}: ${base.low} → ${other.low}`,
@@ -48,37 +48,55 @@ test('бюджет никогда не поднимает цену', () => {
 test('щедрый бюджет ничего не меняет', () => {
   // «Больше 300 000» и «обсуждается» ограничением не являются.
   for (const c of all()) {
-    const base = price(c.task, c.pages, c.priority, 'discuss');
+    const base = price(c.task, c.structure, c.priority, 'discuss');
     for (const budget of ['gt300', 'discuss']) {
-      const other = price(c.task, c.pages, c.priority, budget);
+      const other = price(c.task, c.structure, c.priority, budget);
       assert.equal(other.low, base.low, `${budget} сдвинул низ для ${JSON.stringify(c)}`);
       assert.equal(other.high, base.high, `${budget} сдвинул верх для ${JSON.stringify(c)}`);
     }
   }
 });
 
-test('бюджет ниже вилки подтягивает её вниз', () => {
-  // Хотя бы там, где ориентир студии оставляет место для движения.
-  let moved = 0;
-  for (const c of all()) {
-    const base = price(c.task, c.pages, c.priority, 'discuss');
-    const tight = price(c.task, c.pages, c.priority, 'lt50');
-    if (tight.high < base.high) moved += 1;
-  }
-  assert.ok(moved > 30, `бюджет сдвинул вилку только в ${moved} комбинациях из 64`);
+test('бюджет ниже вилки обязан её сдвинуть, если ориентир оставляет место', () => {
+  // Цены вдвое ниже прежних, а границы бюджета те же, поэтому потолок
+  // связывает реже. Но когда он ниже низа вилки И низ выше ориентира
+  // студии — сближение обязано произойти.
+  const floors: Record<string, Record<string, number>> = {
+    new: { landing: 50_000, multi: 95_000, shop: 150_000, unknown: 50_000 },
+    shop: { landing: 150_000, multi: 150_000, shop: 150_000, unknown: 150_000 },
+    redesign: { landing: 40_000, multi: 75_000, shop: 120_000, unknown: 40_000 },
+    unsure: { landing: 50_000, multi: 95_000, shop: 150_000, unknown: 50_000 },
+  };
+  const ceilings: Record<string, number> = { lt50: 50_000, '50-150': 150_000, '150-300': 300_000 };
+  let checked = 0;
+  for (const c of all())
+    for (const [budget, ceiling] of Object.entries(ceilings)) {
+      const base = price(c.task, c.structure, c.priority, 'discuss');
+      const floor = floors[c.task][c.structure];
+      // Сближение идёт на половину пути и округляется до 5 000, поэтому
+      // разрыв меньше 10 000 может целиком уйти в округление.
+      if (ceiling >= base.low || base.low <= floor || base.low - ceiling < 10_000) continue;
+      checked += 1;
+      const tight = price(c.task, c.structure, c.priority, budget);
+      assert.ok(
+        tight.low < base.low,
+        `${JSON.stringify(c)} + ${budget}: низ ${base.low} выше и потолка ${ceiling}, и ориентира ${floor}, а не сдвинулся`,
+      );
+    }
+  assert.ok(checked > 10, `проверено всего ${checked} случаев — тест ничего не покрывает`);
 });
 
 test('бюджет не опускает низ ниже ориентира студии', () => {
   const floors: Record<string, Record<string, number>> = {
-    new: { one: 50_000, upto5: 75_000, more5: 125_000, unknown: 75_000 },
-    shop: { one: 150_000, upto5: 150_000, more5: 150_000, unknown: 150_000 },
-    redesign: { one: 40_000, upto5: 40_000, more5: 40_000, unknown: 40_000 },
-    unsure: { one: 50_000, upto5: 75_000, more5: 125_000, unknown: 50_000 },
+    new: { landing: 50_000, multi: 95_000, shop: 150_000, unknown: 50_000 },
+    shop: { landing: 150_000, multi: 150_000, shop: 150_000, unknown: 150_000 },
+    redesign: { landing: 40_000, multi: 75_000, shop: 120_000, unknown: 40_000 },
+    unsure: { landing: 50_000, multi: 95_000, shop: 150_000, unknown: 50_000 },
   };
   for (const c of all())
     for (const budget of BUDGETS) {
-      const r = price(c.task, c.pages, c.priority, budget);
-      const floor = floors[c.task][c.pages];
+      const r = price(c.task, c.structure, c.priority, budget);
+      const floor = floors[c.task][c.structure];
       assert.ok(
         r.low >= floor,
         `${JSON.stringify(c)} + бюджет ${budget}: низ ${r.low} ниже ориентира ${floor}`,
@@ -88,63 +106,84 @@ test('бюджет не опускает низ ниже ориентира ст
 
 test('вилка сближается с бюджетом, а не подстраивается под него', () => {
   // Движение навстречу есть, но цифра не становится равной названной сумме.
-  const base = price('shop', 'upto5', 'features', 'discuss');
-  const tight = price('shop', 'upto5', 'features', 'lt50');
+  const base = price('shop', 'shop', 'features', 'discuss');
+  const tight = price('shop', 'shop', 'features', 'lt50');
   assert.ok(tight.high < base.high, 'верх не сдвинулся навстречу бюджету');
   assert.ok(tight.low > 50_000, 'низ опустился до названной суммы — это подстройка, а не оценка');
 });
 
 test('низ вилки не опускается ниже ориентиров студии', () => {
   const floors: Record<string, Record<string, number>> = {
-    new: { one: 50_000, upto5: 75_000, more5: 125_000, unknown: 75_000 },
-    shop: { one: 150_000, upto5: 150_000, more5: 150_000, unknown: 150_000 },
-    redesign: { one: 40_000, upto5: 40_000, more5: 40_000, unknown: 40_000 },
-    unsure: { one: 50_000, upto5: 75_000, more5: 125_000, unknown: 50_000 },
+    new: { landing: 50_000, multi: 95_000, shop: 150_000, unknown: 50_000 },
+    shop: { landing: 150_000, multi: 150_000, shop: 150_000, unknown: 150_000 },
+    redesign: { landing: 40_000, multi: 75_000, shop: 120_000, unknown: 40_000 },
+    unsure: { landing: 50_000, multi: 95_000, shop: 150_000, unknown: 50_000 },
   };
   for (const c of all()) {
-    const r = price(c.task, c.pages, c.priority);
-    const floor = floors[c.task][c.pages];
+    const r = price(c.task, c.structure, c.priority);
+    const floor = floors[c.task][c.structure];
     assert.ok(r.low >= floor, `${JSON.stringify(c)}: низ ${r.low} ниже ориентира ${floor}`);
   }
 });
 
-test('больше страниц — не дешевле', () => {
+test('структура дороже по нарастающей: лендинг → многостраничник → магазин', () => {
   for (const task of TASKS)
     for (const priority of PRIORITY) {
-      const one = price(task, 'one', priority);
-      const five = price(task, 'upto5', priority);
-      const many = price(task, 'more5', priority);
-      assert.ok(five.low >= one.low, `${task}/${priority}: до пяти дешевле одной`);
-      assert.ok(many.low >= five.low, `${task}/${priority}: больше пяти дешевле пяти`);
+      const landing = price(task, 'landing', priority);
+      const multi = price(task, 'multi', priority);
+      const shop = price(task, 'shop', priority);
+      assert.ok(multi.low >= landing.low, `${task}/${priority}: многостраничник дешевле лендинга`);
+      assert.ok(shop.low >= multi.low, `${task}/${priority}: магазин дешевле многостраничника`);
     }
+});
+
+test('магазин стоит одинаково, назван он в первом вопросе или в пятом', () => {
+  // Иначе два пути к одному ответу давали бы разные деньги.
+  for (const priority of PRIORITY) {
+    const viaFirst = price('shop', 'unknown', priority);
+    const viaFifth = price('new', 'shop', priority);
+    assert.equal(viaFirst.low, viaFifth.low, `${priority}: низ разошёлся`);
+    assert.equal(viaFirst.high, viaFifth.high, `${priority}: верх разошёлся`);
+  }
+});
+
+test('магазину структуру не задают, и ответ на неё ничего не меняет', () => {
+  for (const priority of PRIORITY) {
+    const base = price('shop', 'unknown', priority);
+    for (const structure of STRUCTURES) {
+      const other = price('shop', structure, priority);
+      assert.equal(other.low, base.low, `${priority}/${structure}: низ поехал`);
+      assert.equal(other.high, base.high, `${priority}/${structure}: верх поехал`);
+    }
+  }
 });
 
 test('уникальный дизайн и функциональность дороже скорости запуска', () => {
   for (const task of TASKS)
-    for (const pages of PAGES) {
-      const speed = price(task, pages, 'speed');
-      const design = price(task, pages, 'design');
-      const features = price(task, pages, 'features');
-      assert.ok(design.low >= speed.low, `${task}/${pages}: дизайн не дороже скорости`);
-      assert.ok(features.low >= design.low, `${task}/${pages}: функциональность дешевле дизайна`);
-      assert.ok(speed.high <= design.high, `${task}/${pages}: верх скорости выше верха дизайна`);
+    for (const structure of STRUCTURES) {
+      const speed = price(task, structure, 'speed');
+      const design = price(task, structure, 'design');
+      const features = price(task, structure, 'features');
+      assert.ok(design.low >= speed.low, `${task}/${structure}: дизайн не дороже скорости`);
+      assert.ok(features.low >= design.low, `${task}/${structure}: функциональность дешевле дизайна`);
+      assert.ok(speed.high <= design.high, `${task}/${structure}: верх скорости выше верха дизайна`);
     }
 });
 
 test('магазин не дешевле сайта с нуля, переделка не дороже сайта с нуля', () => {
-  for (const pages of PAGES)
+  for (const structure of STRUCTURES)
     for (const priority of PRIORITY) {
-      const fresh = price('new', pages, priority);
-      const shop = price('shop', pages, priority);
-      const redo = price('redesign', pages, priority);
-      assert.ok(shop.low >= fresh.low, `${pages}/${priority}: магазин дешевле сайта с нуля`);
-      assert.ok(redo.low <= fresh.low, `${pages}/${priority}: переделка дороже сайта с нуля`);
+      const fresh = price('new', structure, priority);
+      const shop = price('shop', structure, priority);
+      const redo = price('redesign', structure, priority);
+      assert.ok(shop.low >= fresh.low, `${structure}/${priority}: магазин дешевле сайта с нуля`);
+      assert.ok(redo.low <= fresh.low, `${structure}/${priority}: переделка дороже сайта с нуля`);
     }
 });
 
 test('вилка не уже 1.35 и не шире допустимого для своей неопределённости', () => {
   for (const c of all()) {
-    const r = price(c.task, c.pages, c.priority);
+    const r = price(c.task, c.structure, c.priority);
     const spread = r.high / r.low;
     const limit = [2.21, 2.51, 2.81][r.uncertain.length];
     assert.ok(spread >= 1.349, `${JSON.stringify(c)}: вилка слишком узкая (${spread.toFixed(2)})`);
@@ -154,7 +193,7 @@ test('вилка не уже 1.35 и не шире допустимого для
 
 test('неопределённость расширяет вилку', () => {
   for (const priority of PRIORITY) {
-    const known = price('new', 'upto5', priority);
+    const known = price('new', 'multi', priority);
     const unknownPages = price('new', 'unknown', priority);
     assert.ok(
       unknownPages.high / unknownPages.low >= known.high / known.low,
@@ -164,29 +203,29 @@ test('неопределённость расширяет вилку', () => {
 });
 
 test('«не знаю» про страницы накрывает пол большого честного ответа', () => {
-  // Главное свойство: человеку, которому нужно двенадцать страниц, не должно
-  // быть выгодно ответить «не знаю» — иначе квиз учит не отвечать.
-  for (const task of TASKS)
+  // Главное свойство: человеку с многостраничником не должно быть выгодно
+  // ответить «не знаю» — иначе квиз учит не отвечать.
+  for (const task of ['new', 'redesign'])
     for (const priority of PRIORITY) {
       const vague = price(task, 'unknown', priority);
-      for (const pages of ['upto5', 'more5']) {
-        const exact = price(task, pages, priority);
-        assert.ok(
-          vague.low <= exact.low && exact.low <= vague.high,
-          `${task}/${priority}: пол честного «${pages}» (${exact.low}) не попадает в вилку «не знаю» (${vague.low}–${vague.high})`,
-        );
-      }
+      const exact = price(task, 'multi', priority);
+      assert.ok(
+        vague.low <= exact.low && exact.low <= vague.high,
+        `${task}/${priority}: пол честного многостраничника (${exact.low}) не попадает в вилку «не знаю» (${vague.low}–${vague.high})`,
+      );
     }
 });
 
-test('«не знаю» уходит выше среднего честного ответа', () => {
-  for (const task of ['new', 'redesign', 'shop'])
+test('«не знаю» про структуру уходит выше лендинга', () => {
+  // Дальше потолка многостраничника «не знаю» не тянем: минимальная ширина
+  // и так поднимает верх у точного ответа, а containment проверяет тест выше.
+  for (const task of ['new', 'redesign'])
     for (const priority of PRIORITY) {
       const vague = price(task, 'unknown', priority);
-      const middle = price(task, 'upto5', priority);
+      const landing = price(task, 'landing', priority);
       assert.ok(
-        vague.high > middle.high,
-        `${task}/${priority}: потолок «не знаю» (${vague.high}) не выше потолка «до пяти» (${middle.high})`,
+        vague.high > landing.high,
+        `${task}/${priority}: потолок «не знаю» (${vague.high}) не выше потолка лендинга (${landing.high})`,
       );
     }
 });
@@ -195,19 +234,19 @@ test('«пока не определился» не дешевле самого 
   // Вилку строим по обычному сайту: это самый частый случай. Более дорогой
   // край (интернет-магазин) в неё не всегда влезает — тогда о нём говорится
   // словами в caveat, а не растягиванием вилки втрое.
-  for (const pages of PAGES)
+  for (const structure of STRUCTURES)
     for (const priority of PRIORITY) {
-      const vague = price('unsure', pages, priority);
-      const likely = price('new', pages, priority);
-      assert.ok(vague.low <= likely.low, `${pages}/${priority}: «не определился» дороже по полу`);
-      assert.ok(vague.high >= likely.high, `${pages}/${priority}: «не определился» ниже по потолку`);
+      const vague = price('unsure', structure, priority);
+      const likely = price('new', structure, priority);
+      assert.ok(vague.low <= likely.low, `${structure}/${priority}: «не определился» дороже по полу`);
+      assert.ok(vague.high >= likely.high, `${structure}/${priority}: «не определился» ниже по потолку`);
     }
 });
 
 test('текста про названный бюджет на экране нет ни при каких ответах', () => {
   for (const c of all())
     for (const budget of BUDGETS) {
-      const r = price(c.task, c.pages, c.priority, budget);
+      const r = price(c.task, c.structure, c.priority, budget);
       if (!r.caveat) continue;
       assert.ok(
         !/указали бюджет|не берусь/.test(r.caveat),
@@ -216,18 +255,18 @@ test('текста про названный бюджет на экране не
     }
 });
 
-test('уровень цен вдвое ниже прежнего', () => {
-  // Ориентиры были 100 000 / 150 000 / 250 000 / 300 000 / 80 000.
-  assert.equal(price('new', 'one', 'speed').low, 50_000);
-  assert.equal(price('new', 'upto5', 'speed').low, 75_000);
-  assert.equal(price('new', 'more5', 'speed').low, 125_000);
-  assert.equal(price('shop', 'one', 'speed').low, 150_000);
-  assert.equal(price('redesign', 'one', 'speed').low, 40_000);
+test('ориентиры студии на месте', () => {
+  assert.equal(price('new', 'landing', 'speed').low, 50_000);
+  assert.equal(price('new', 'multi', 'speed').low, 95_000);
+  assert.equal(price('new', 'shop', 'speed').low, 150_000);
+  assert.equal(price('shop', 'unknown', 'speed').low, 150_000);
+  assert.equal(price('redesign', 'landing', 'speed').low, 40_000);
+  assert.equal(price('redesign', 'multi', 'speed').low, 75_000);
 });
 
 test('у неопределённых ответов всегда есть оговорка, у точных — нет', () => {
   for (const c of all()) {
-    const r = price(c.task, c.pages, c.priority);
+    const r = price(c.task, c.structure, c.priority);
     if (r.uncertain.length === 0) {
       assert.equal(r.caveat, null, `${JSON.stringify(c)}: оговорка там, где всё определено`);
     } else {
@@ -237,13 +276,13 @@ test('у неопределённых ответов всегда есть ог�
 });
 
 test('если магазин не влезает в вилку неопределённой задачи — об этом сказано', () => {
-  for (const pages of PAGES)
+  for (const structure of STRUCTURES)
     for (const priority of PRIORITY) {
-      const vague = price('unsure', pages, priority);
+      const vague = price('unsure', structure, priority);
       if (vague.high < 150_000) {
         assert.ok(
           vague.caveat?.includes('150 000'),
-          `${pages}/${priority}: вилка до ${vague.high}, а про порог магазина не сказано`,
+          `${structure}/${priority}: вилка до ${vague.high}, а про порог магазина не сказано`,
         );
       }
     }
@@ -252,13 +291,13 @@ test('если магазин не влезает в вилку неопреде
 test('список неопределённых ответов соответствует выбору', () => {
   assert.deepEqual(price('new', 'upto5', 'design').uncertain, []);
   assert.deepEqual(price('unsure', 'upto5', 'design').uncertain, ['задача']);
-  assert.deepEqual(price('new', 'unknown', 'design').uncertain, ['объём']);
-  assert.deepEqual(price('unsure', 'unknown', 'design').uncertain, ['задача', 'объём']);
+  assert.deepEqual(price('new', 'unknown', 'design').uncertain, ['структура']);
+  assert.deepEqual(price('unsure', 'unknown', 'design').uncertain, ['задача', 'структура']);
 });
 
 test('всё кратно 5 000 — цифра читается как оценка, а не как смета', () => {
   for (const c of all()) {
-    const r = price(c.task, c.pages, c.priority);
+    const r = price(c.task, c.structure, c.priority);
     assert.equal(r.low % 5_000, 0, `низ ${r.low} не кратен 5 000`);
     assert.equal(r.high % 5_000, 0, `верх ${r.high} не кратен 5 000`);
   }
@@ -271,7 +310,14 @@ test('неполные ответы не ломают расчёт', () => {
   assert.ok(partial.low >= 150_000, 'магазин без остальных ответов должен быть от 150 000');
 });
 
-test('в квизе ровно семь вопросов и у каждого есть варианты', () => {
+test('в квизе семь вопросов, а магазину задаётся шесть', () => {
   assert.equal(QUESTIONS.length, 7);
   for (const q of QUESTIONS) assert.ok(q.options.length >= 4, `${q.id}: мало вариантов`);
+  assert.equal(visibleQuestions({}).length, 7);
+  assert.equal(visibleQuestions({ task: 'new' }).length, 7);
+  assert.equal(visibleQuestions({ task: 'shop' }).length, 6);
+  assert.ok(
+    !visibleQuestions({ task: 'shop' }).some((q) => q.id === 'structure'),
+    'магазину всё ещё показывают вопрос про структуру',
+  );
 });

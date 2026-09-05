@@ -52,7 +52,7 @@ async function run(browser, view) {
     const options = page.locator('[role="dialog"] ul li button');
     await options.nth(ANSWERS[i] - 1).click();
     await page.waitForTimeout(780);
-    if (i === 3) await page.screenshot({ path: `${OUT}/04-вопрос-5-${view.tag}.png` });
+    if (i === 3) await page.screenshot({ path: `${OUT}/04-вопрос-структура-${view.tag}.png` });
   }
 
   // Вилка и форма — один кадр
