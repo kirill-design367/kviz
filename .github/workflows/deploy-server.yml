@@ -63,6 +63,11 @@ jobs:
         with:
           context: .
           push: true
+          # Номер счётчика Метрики приезжает переменной репозитория YM_ID.
+          # Он подставляется в сборку статики, поэтому обязан быть ЗДЕСЬ:
+          # на сервере пересобрать нечего, там уже готовый образ.
+          build-args: |
+            NEXT_PUBLIC_YM_ID=${{ vars.YM_ID }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
             ${{ env.IMAGE_NAME }}:latest

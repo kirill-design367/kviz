@@ -137,6 +137,15 @@ else
   good "префикса /kviz нет: адреса ведут в корень домена"
 fi
 grep -qi '^cache-control:.*no-cache' /tmp/aurea-h.$$ && good "у HTML заголовок no-cache" || fail "у HTML нет no-cache: после выкладки покажется старая страница"
+# Счётчик Метрики. Номер подставляется на сборке образа, поэтому его отсутствие
+# на живом сайте означает, что образ собран без переменной YM_ID, — а понять
+# это по интерфейсу Метрики нельзя, там просто не будет данных.
+ym=$(echo "$html" | grep -o 'mc\.yandex\.ru/watch/[0-9]\+' | head -1 | grep -o '[0-9]\+')
+if [ -n "$ym" ]; then
+  good "счётчик Метрики в разметке: № $ym"
+else
+  fail "счётчика Метрики в разметке нет — образ собран без YM_ID"
+fi
 enc=$("${CURL[@]}" -o /dev/null -D - -H 'Accept-Encoding: gzip' "$ORIGIN/" 2>/dev/null | grep -i '^content-encoding:' | tr -d '\r')
 [ -n "$enc" ] && good "сжатие работает: $enc" || fail "ответ не сжат — заголовок клиента до приёмника не дошёл"
 rm -f /tmp/aurea-h.$$

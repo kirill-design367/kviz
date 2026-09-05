@@ -51,6 +51,20 @@ declare global {
 let loading = false;
 let loaded = false;
 
+/**
+ * Настройки счётчика. Вебвизор, карта кликов и точный показатель отказов
+ * включены в интерфейсе Метрики — но одного этого мало: тех же трёх ключей
+ * ждёт и вызов init. Включено в интерфейсе, выключено здесь — значит данных
+ * не будет, и понять это по интерфейсу нельзя.
+ */
+const INIT_PARAMS = {
+  clickmap: true,
+  trackLinks: true,
+  accurateTrackBounce: true,
+  webvisor: true,
+  defer: false,
+} as const;
+
 function injectTag() {
   if (loading || loaded || !YM_ID || typeof document === 'undefined') return;
   loading = true;
@@ -59,13 +73,6 @@ function injectTag() {
   script.async = true;
   script.onload = () => {
     loaded = true;
-    window.ym?.(YM_ID, 'init', {
-      clickmap: true,
-      trackLinks: true,
-      accurateTrackBounce: true,
-      webvisor: false,
-      defer: false,
-    });
   };
   document.head.appendChild(script);
 }
@@ -86,6 +93,14 @@ export function initMetrika(): void {
   }
 
   if (!YM_ID) return;
+
+  // init кладём в очередь СРАЗУ, до загрузки скрипта, — как в родном сниппете
+  // Метрики. Раньше он вызывался в onload, то есть уже ПОСЛЕ того, как tag.js
+  // разобрал очередь: цели, отправленные до загрузки (а первая из них —
+  // «квиз открыт», и она почти всегда успевает раньше), приходили к счётчику,
+  // который ещё не инициализирован, и терялись. Теперь порядок в очереди
+  // всегда один: init, потом цели.
+  window.ym?.(YM_ID, 'init', INIT_PARAMS);
 
   const start = () => injectTag();
   const idle = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: object) => void })

@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kirill-design367.github.io/kviz';
+// Боевой адрес. Публикация на GitHub Pages снята: две копии одного сайта
+// делят между собой поисковую выдачу, и та, что не приносит заявок, лишняя.
+const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://cenasaita.ru';
 // Пока номера счётчика нет, пиксель не ставится: иначе каждый заход
 // без JS дёргал бы https://mc.yandex.ru/watch/ и получал ошибку.
 const YM_ID = process.env.NEXT_PUBLIC_YM_ID ?? '';

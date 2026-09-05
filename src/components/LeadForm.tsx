@@ -117,7 +117,18 @@ export function LeadForm({ answers, price, onSent }: Props) {
   const sending = status === 'sending';
 
   return (
-    <form onSubmit={submit} noValidate className="w-full">
+    <form
+      onSubmit={submit}
+      noValidate
+      className="w-full"
+      /* Цель «начал заполнять» — первое касание любого поля или кнопки
+         внутри формы. Между «увидел вилку» и «отправил» это единственная
+         точка, по которой видно, где человек передумал: посмотрел и ушёл
+         или начал печатать и бросил. Событие всплывает, поэтому хватает
+         одного обработчика на форму, а reachGoal сам отсекает повторы. */
+      onFocusCapture={() => reachGoal(GOALS.formStart)}
+      onPointerDownCapture={() => reachGoal(GOALS.formStart)}
+    >
       <div className="space-y-3 lg:space-y-4">
         <Field
           id="name"
